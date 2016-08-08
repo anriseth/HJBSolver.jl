@@ -4,11 +4,16 @@ os:
   - linux
   - osx
 julia:
-  - release
-  - nightly
+  - 0.4
 notifications:
   email: false
 # uncomment the following lines to override the default test script
-#script:
-#  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-#  - julia -e 'Pkg.clone(pwd()); Pkg.build("HJBSolver"); Pkg.test("HJBSolver"; coverage=true)'
+script:
+  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
+  - julia -e 'Pkg.clone(pwd())'
+  #- julia -e 'Pkg.build("HJBSolver")'
+  - julia -e 'Pkg.test("HJBSolver"; coverage=true)'
+
+#after_success:
+#  - echo $TRAVIS_JULIA_VERSION
+#  - julia -e 'Pkg.add("Coverage"); cd(Pkg.dir("HJBSolver")); using Coverage; Coveralls.submit(process_folder()); Codecov.submit(process_folder())'
