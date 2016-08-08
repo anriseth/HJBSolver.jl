@@ -1,5 +1,9 @@
+isdefined(Base, :__precompile__) && __precompile__()
+
 module HJBSolver
 
-# package code goes here
+include("types.jl")
+
+include("solver.jl")
 
 end # module
