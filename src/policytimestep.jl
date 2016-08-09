@@ -46,7 +46,7 @@ function policytimestep(model::HJBOneDim,
     rhs = zeros(x)
     # Dirichlet conditions
     rhs[1] = model.Dmin(t, x[1])
-    rhs[end] = model.Dmin(t, x[end])
+    rhs[end] = model.Dmax(t, x[end])
 
     @inbounds for i = 1:length(avals)
         a = avals[i]

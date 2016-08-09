@@ -29,7 +29,7 @@ function updatecoeffs!{T<:Real}(coeff0, coeff1, coeff2, rhs, model, v, t::T, x,
     end
 end
 
-function updatepol!(pol, v, model, t, x, Δx)
+function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
     # Loops over each x[i] value and optimises the control
     # TODO: Should we instead optimize the whole control vector
     # by considering the sum of the individual objectives
@@ -43,7 +43,6 @@ function updatepol!(pol, v, model, t, x, Δx)
         sval2 = model.σ(t,x[j],a[1])^2
         coeff1 = sval2*hdx2 + max(bval,0.)*idx
         coeff2 = sval2*hdx2 - min(bval,0.)*idx
-        coeff0 = -(coeff1+coeff2)
         return coeff1*(v[j]-v[j+1]) + coeff2*(v[j]-v[j-1]) - model.f(t,x[j],a[1])
     end
 
@@ -54,7 +53,6 @@ function updatepol!(pol, v, model, t, x, Δx)
         diffobj = DifferentiableFunction(objective, g!)
 
         # TODO: use univariate solver for 1D?
-        # TODO: Make LBFGS work
         res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
                        Fminbox(), optimizer=LBFGS)#,
                        #optimizer_o = OptimizeOptions(rel_tol=1e-3))
@@ -85,7 +83,7 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     rhs = zeros(x)
     # Dirichlet conditions
     rhs[1] = model.Dmin(t, x[1])
-    rhs[end] = model.Dmin(t, x[end])
+    rhs[end] = model.Dmax(t, x[end])
 
     updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
     Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
