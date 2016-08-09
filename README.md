@@ -1,6 +1,8 @@
 # HJBSolver
 
 [![Build Status](https://travis-ci.org/anriseth/HJBSolver.jl.svg?branch=master)](https://travis-ci.org/anriseth/HJBSolver.jl)
+[![Coverage Status](https://coveralls.io/repos/anriseth/HJBSolver.jl/badge.svg)](https://coveralls.io/r/anriseth/HJBSolver.jl)
+[![codecov](https://codecov.io/gh/anriseth/HJBSolver.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/anriseth/HJBSolver.jl)
 
 ## General solver for Hamilton-Jacobi-Bellman equations.
 Solve one-dimensional HJB equations of the form
@@ -18,7 +20,6 @@ in `forsyth2007numerical`:
 ## TODO:
 - Show how to use it
 - Warn about crappy code
-- Start using Issues for TODO
 
 
 ## Citations
