@@ -20,12 +20,14 @@ function updatecoeffs!{T<:Real}(coeff0, coeff1, coeff2, rhs, model, v, t::T, x,
 
     n = length(coeff0)
     for j = 2:n-1
-        bval = model.b(t,x[j],a[j-1])
-        sval2 = model.σ(t,x[j],a[j-1])^2
-        coeff1[j] = -(sval2*htaux2 + max(bval,0.)*taux)
-        coeff2[j-1] = -(sval2*htaux2 - min(bval,0.)*taux)
-        coeff0[j] = 1.-coeff1[j]-coeff2[j-1]
-        rhs[j] = v[j] + Δτ*model.f(t,x[j],a[j-1])
+        @inbounds begin
+            bval = model.b(t,x[j],a[j-1])
+            sval2 = model.σ(t,x[j],a[j-1])^2
+            coeff1[j] = -(sval2*htaux2 + max(bval,0.)*taux)
+            coeff2[j-1] = -(sval2*htaux2 - min(bval,0.)*taux)
+            coeff0[j] = 1.-coeff1[j]-coeff2[j-1]
+            rhs[j] = v[j] + Δτ*model.f(t,x[j],a[j-1])
+        end
     end
 end
 
@@ -39,11 +41,13 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
     hdx2 = 0.5/Δx^2
 
     function hamiltonian(a, j::Int)
-        bval = model.b(t,x[j],a[1])
-        sval2 = model.σ(t,x[j],a[1])^2
-        coeff1 = sval2*hdx2 + max(bval,0.)*idx
-        coeff2 = sval2*hdx2 - min(bval,0.)*idx
-        return coeff1*(v[j]-v[j+1]) + coeff2*(v[j]-v[j-1]) - model.f(t,x[j],a[1])
+        @inbounds begin
+            bval = model.b(t,x[j],a[1])
+            sval2 = model.σ(t,x[j],a[1])^2
+            coeff1 = sval2*hdx2 + max(bval,0.)*idx
+            coeff2 = sval2*hdx2 - min(bval,0.)*idx
+            return coeff1*(v[j]-v[j+1]) + coeff2*(v[j]-v[j-1]) - model.f(t,x[j],a[1])
+        end
     end
 
 
@@ -58,7 +62,7 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
                        #optimizer_o = OptimizeOptions(rel_tol=1e-3))
         # TODO: add options
 
-        pol[j] = res.minimum[1]
+        @inbounds pol[j] = res.minimum[1]
     end
 end
 
@@ -82,8 +86,8 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     coeff2 = zeros(n-1) # v_{i-1} # TODO: type stability
     rhs = zeros(x)
     # Dirichlet conditions
-    rhs[1] = model.Dmin(t, x[1])
-    rhs[end] = model.Dmax(t, x[end])
+    @inbounds rhs[1] = model.Dmin(t, x[1])
+    @inbounds rhs[end] = model.Dmax(t, x[end])
 
     updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
     Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
@@ -122,11 +126,13 @@ function timeloopiteration(model::HJBOneDim, K::Int, N::Int,
     @inbounds v[:,2], pol[:,1] = policynewtonupdate(model, v[:, 1],
                                                     polinit, x, Δx, Δτ, 1)
 
-    @inbounds for j = 2:N
-        # t = (N-j)*Δτ
-        # TODO: pass v-column, pol-column by reference?
-        v[:,j+1], pol[:,j] = policynewtonupdate(model, v[:, j],
-                                                pol[:,j-1], x, Δx, Δτ, j)
+    for j = 2:N
+        @inbounds begin
+            # t = (N-j)*Δτ
+            # TODO: pass v-column, pol-column by reference?
+            v[:,j+1], pol[:,j] = policynewtonupdate(model, v[:, j],
+                                                    pol[:,j-1], x, Δx, Δτ, j)
+        end
     end
 
     return v, pol

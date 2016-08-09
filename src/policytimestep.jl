@@ -20,12 +20,14 @@ function updatecoeffs!{T<:Real}(coeff0, coeff1, coeff2, rhs, model, v, t::T, x,
 
     n = length(coeff0)
     for j = 2:n-1
-        bval = model.b(t,x[j],a)
-        sval2 = model.σ(t,x[j],a)^2
-        coeff1[j] = -(sval2*htaux2 + max(bval,0.)*taux)
-        coeff2[j-1] = -(sval2*htaux2 - min(bval,0.)*taux)
-        coeff0[j] = 1.-coeff1[j]-coeff2[j-1]
-        rhs[j] = v[j] + Δτ*model.f(t,x[j],a)
+        @inbounds begin
+            bval = model.b(t,x[j],a)
+            sval2 = model.σ(t,x[j],a)^2
+            coeff1[j] = -(sval2*htaux2 + max(bval,0.)*taux)
+            coeff2[j-1] = -(sval2*htaux2 - min(bval,0.)*taux)
+            coeff0[j] = 1.-coeff1[j]-coeff2[j-1]
+            rhs[j] = v[j] + Δτ*model.f(t,x[j],a)
+        end
     end
 end
 
@@ -36,7 +38,7 @@ function policytimestep(model::HJBOneDim,
 
     # TODO: redo this thing
     newind = ones(Int, n)
-    vnew = -maxintfloat(typeof(x[1]))*ones(x)
+    @inbounds vnew = -maxintfloat(typeof(x[1]))*ones(x)
 
     ind12 = zeros(Bool, length(vnew))
 
@@ -45,26 +47,28 @@ function policytimestep(model::HJBOneDim,
     coeff2 = zeros(n-1) # v_{i-1} # TODO: type stability
     rhs = zeros(x)
     # Dirichlet conditions
-    rhs[1] = model.Dmin(t, x[1])
-    rhs[end] = model.Dmax(t, x[end])
+    @inbounds rhs[1] = model.Dmin(t, x[1])
+    @inbounds rhs[end] = model.Dmax(t, x[end])
 
-    @inbounds for i = 1:length(avals)
-        a = avals[i]
-        vold = vnew
+    for i = 1:length(avals)
+        @inbounds begin
+            a = avals[i]
+            vold = vnew
 
-        updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
+            updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
 
-        Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
+            Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
 
-        # TODO: Use Krylov solver for high-dimensional PDEs
-        vnew = Mat\rhs
+            # TODO: Use Krylov solver for high-dimensional PDEs
+            vnew = Mat\rhs
 
-        ind12[:] = vold .> vnew
-        vnew[ind12] = vold[ind12]
-        newind[!ind12] = i
+            ind12[:] = vold .> vnew
+            vnew[ind12] = vold[ind12]
+            newind[!ind12] = i
+        end
     end
     # newind[1,end] represent boundaries, no control is used there
-    pol = avals[newind[2:end-1]]
+    @inbounds pol = avals[newind[2:end-1]]
 
     return vnew, pol
 end
@@ -78,12 +82,13 @@ function timeloopconstant(model::HJBOneDim, K::Int, N::Int,
 
     @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
 
-    @inbounds for j = 1:N
-        # t = (N-j)*Δτ
-        # TODO: pass v-column, pol-column by reference?
-        v[:,j+1], pol[:,j] = policytimestep(model, v[:, j],
-                                            avals, x, Δx, Δτ, j)
-
+    for j = 1:N
+        @inbounds begin
+            # t = (N-j)*Δτ
+            # TODO: pass v-column, pol-column by reference?
+            v[:,j+1], pol[:,j] = policytimestep(model, v[:, j],
+                                                avals, x, Δx, Δτ, j)
+        end
     end
 
     return v, pol
