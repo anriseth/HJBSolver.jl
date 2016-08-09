@@ -1,4 +1,5 @@
 # TODO: better names for the functions
+using ForwardDiff
 
 function updatecoeffs!{T<:Real}(coeff0, coeff1, coeff2, rhs, model, v, t::T, x,
                                 a::Vector{T}, Δτ::T, Δx::T)
@@ -34,26 +35,32 @@ function updatepol!(pol, v, model, t, x, Δx)
     # by considering the sum of the individual objectives
     # (the gradient should be diagonal?)
 
-
     idx = 1./Δx
     hdx2 = 0.5/Δx^2
 
     function hamiltonian(a, j::Int)
-        bval = model.b(t,x[j],a)
-        sval2 = model.σ(t,x[j],a)^2
+        bval = model.b(t,x[j],a[1])
+        sval2 = model.σ(t,x[j],a[1])^2
         coeff1 = sval2*hdx2 + max(bval,0.)*idx
         coeff2 = sval2*hdx2 - min(bval,0.)*idx
         coeff0 = -(coeff1+coeff2)
-        return coeff1*(v[j]-v[j+1]) + coeff2*(v[j]-v[j-1]) - model.f(t,x[j],a)
+        return coeff1*(v[j]-v[j+1]) + coeff2*(v[j]-v[j-1]) - model.f(t,x[j],a[1])
     end
+
 
     for j = 1:length(pol)
         objective(a) = hamiltonian(a, j+1) # j+1 as the control only lives on the interior
-        # TODO: Use a Newton-type solver?
-        res = optimize(objective, model.amin, model.amax)#;
-        #rel_tol=1e-3, abs_tol=1e-3) #TODO: inputs should be made higher up?
+        g!(x, out) = ForwardDiff.gradient!(out, objective, x)
+        diffobj = DifferentiableFunction(objective, g!)
 
-        pol[j] = res.minimum
+        # TODO: use univariate solver for 1D?
+        # TODO: Make LBFGS work
+        res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
+                       Fminbox(), optimizer=LBFGS)#,
+                       #optimizer_o = OptimizeOptions(rel_tol=1e-3))
+        # TODO: add options
+
+        pol[j] = res.minimum[1]
     end
 end
 
