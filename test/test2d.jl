@@ -33,6 +33,7 @@ function calculateerror_iter(prob::TestProblem2D, K::Int, N::Int)
     Base.error("Implement this function")
     # TODO: calculate error at time T
     # TODO: return relative norm
+    # TODO: remember that policy is now on the whole domain
 
     # @time v, pol = solve(prob.model, K, N)
     # model = prob.model
