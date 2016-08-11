@@ -1,4 +1,4 @@
-export HJBOneDim
+export HJBOneDim, HJBTwoDim
 
 abstract AbstractHJB
 
