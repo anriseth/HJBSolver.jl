@@ -14,7 +14,8 @@ end
 
 function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
                                 a1::Vector{T}, a2::Vector{T}, Δτ::T, Δx::Vector{T})
-    Base.info("Running updatecoeffs")
+    #Base.info("Running updatecoeffs")
+    # TODO: change name to updatesystem or something like that
     # Updates:
     # rhs    = value function at previous timestep + f at current timestep
     # I,J,V  = vectors for creating sparse system matrix (see ?sparse)
@@ -39,6 +40,8 @@ function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
         idxi = K[2]*(i-1) + j
         xij = [x[1][i], x[2][j]]
         counter = setIJV!(I,J,V,idxi,idxi,1.0,counter)
+        # TODO: we could rhs assignment outside this function
+        # so it doesn't get called on every loop in the Newton solver
         rhs[idxi] = model.Dbound(t, xij)
     end
 
@@ -47,6 +50,8 @@ function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
         idxi = K[2]*(i-1)+j
         xij = [x[1][i], x[2][j]]
         counter = setIJV!(I,J,V,idxi,idxi,1.0,counter)
+        # TODO: we could rhs assignment outside this function
+        # so it doesn't get called on every loop in the Newton solver
         rhs[idxi] = model.Dbound(t, xij)
     end
 
@@ -166,7 +171,6 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
 
     for k in 0:maxpolicyiter
         updatepol!(pol1, pol2, vnew, model, t, x, Δx)
-        #@show reshape(pol1, K[2], K[1])
         updatecoeffs!(I,J,V, rhs, model, v, t, x, pol1, pol2, Δτ, Δx)
 
         Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
@@ -186,6 +190,59 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
 
     return vnew, pol1, pol2
 end
+
+function policytimestep{T<:Real}(model::HJBTwoDim{T},
+                                 v, a1, a2, x::Tuple{Vector{T},Vector{T}},
+                                 Δx::Vector{T}, Δτ, ti::Int, avals::Tuple)
+    # v  = value function at previous time-step
+    # an = policy function at previous time-step / initial guess for update
+    Base.info("Discrete policy step update")
+    t = model.T - ti*Δτ
+    @show t
+    n = length(v)
+    K = [length(xi) for xi in x]
+    @assert length(a1) == n && length(a2) == n
+
+    # Elements in sparse system matrix (n\times n) size
+    interiornnz = 5*prod(K-2)
+    boundarynnz = 2*(sum(K)-2)
+    totnnz = interiornnz + boundarynnz
+    I = zeros(Int, totnnz); J = zeros(I); V = zeros(T, totnnz)
+
+    a1const = zeros(n)
+    a2const = zeros(n)
+    newind1 = ones(Int, n) # Indices for pol1
+    newind2 = ones(Int, n) # Indices for pol2
+    @inbounds vnew = -maxintfloat(T)*ones(v)
+    indkeep = zeros(Bool, length(vnew)) # Indices to keep vold value
+
+    rhs = zeros(v)
+
+    for i = 1:length(avals[1]), j = 1:length(avals[2])
+        a1const[:] = avals[1][i]
+        a2const[:] = avals[2][j]
+
+        updatecoeffs!(I,J,V, rhs, model, v, t, x, a1const, a2const, Δτ, Δx)
+
+        # TODO: Remove the Base.error thing, just for checking
+        Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
+
+        # TODO: Use Krylov solver for high-dimensional PDEs?
+        vold = vnew
+        vnew = Mat\rhs
+
+        indkeep[:] = vold .> vnew
+        vnew[indkeep] = vold[indkeep]
+        newind1[!indkeep] = i
+        newind2[!indkeep] = j
+    end
+
+    pol1 = avals[1][newind1]
+    pol2 = avals[2][newind2]
+
+    return vnew, pol1, pol2
+end
+
 
 function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
                            Δτ, vinit, x::Tuple, Δx::Vector)
@@ -219,6 +276,40 @@ function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
     return v, pol
 end
 
+function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
+                           Δτ, vinit, x::Tuple, Δx::Vector, avals::Tuple)
+    Base.info("Policy timestepping")
+    # Pass v and pol by reference?
+    v = zeros(length(vinit), N+1)
+    # No policy at t = T
+    pol1 = zeros(length(vinit), N)
+    pol2 = zeros(length(vinit), N)
+    pol = (pol1, pol2)
+
+    @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
+
+    # initial guess for control
+    pol1init = 0.5*(model.amax[1]+model.amin[1])*ones(prod(K))
+    pol2init = 0.5*(model.amax[2]+model.amin[2])*ones(prod(K))
+    @inbounds v[:,2], pol1[:,1], pol2[:,1] = policytimestep(model, v[:,1], pol1init, pol2init,
+                                                                x, Δx, Δτ, 1, avals)
+    #@show pol1[:,1]
+    #@show pol2[:,1]
+    #@show v[:,2]
+    #Base.error("Exit")
+
+    @inbounds for j = 2:N
+        # t = (N-j)*Δτ
+        # TODO: pass v-column, pol-column by reference?
+        @inbounds (v[:,j+1], pol1[:,j],
+                   pol2[:,j]) = policytimestep(model, v[:,j], pol1[:,j-1], pol2[:,j-1],
+                                                 x, Δx, Δτ, j, avals)
+    end
+
+    return v, pol
+end
+
+
 function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int)
     # K   = number of points in each direction of the space domain
     # N+1 = number of points in time domain
@@ -240,3 +331,25 @@ function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int)
 end
 
 solve(model::HJBTwoDim, K::Int, N::Int) = solve(model, [K,K], N)
+
+
+function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int,
+                         avals::Tuple)
+    # K   = number of points in each direction of the space domain
+    # N+1 = number of points in time domain
+    x1 = linspace(model.xmin[1], model.xmax[1], K[1])
+    x2 = linspace(model.xmin[2], model.xmax[2], K[2])
+    x = (collect(x1), collect(x2))
+    Δx = (model.xmax-model.xmin)./(K-1) # TODO: use diff(x) to accomodate non-uniform grid
+    Δτ = model.T/N # TODO: introduce non-uniform timesteps?
+
+    vinit = zeros(T1, prod(K))
+    for i = 1:K[1], j = 1:K[2]
+        idx = K[2]*(i-1)+j
+        xij = [x[1][i], x[2][j]]
+        vinit[idx] = model.g(xij)
+    end
+
+    v, pol = timeloopiteration(model, K, N, Δτ, vinit, x, Δx, avals)
+    return v, pol
+end
