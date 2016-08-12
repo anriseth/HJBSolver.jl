@@ -53,15 +53,14 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
 
     for j = 1:length(pol)
         objective(a) = hamiltonian(a, j+1) # j+1 as the control only lives on the interior
-        g!(x, out) = ForwardDiff.gradient!(out, objective, x)
-        diffobj = DifferentiableFunction(objective, g!)
+        # g!(x, out) = ForwardDiff.gradient!(out, objective, x)
+        # diffobj = DifferentiableFunction(objective, g!)
 
-        # TODO: Use univariate solver until Optim/#261 is fixed
-        #res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
-        #               Fminbox(), optimizer=LBFGS,
-        #               optimizer_o = OptimizationOptions(show_trace=true,
-                                                         #extended_trace=true))
+        # res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
+        #                Fminbox(), optimizer=LBFGS,
+        #                optimizer_o = OptimizationOptions(g_tol=1e-3,f_tol=1e-3,x_tol=1e-3))#,
         #@inbounds pol[j] = res.minimum[1]
+        # TODO: Use univariate solver until Optim/#261 is fixed
         # TODO: add options
         res = optimize(objective, model.amin, model.amax)
         pol[j] = res.minimum
