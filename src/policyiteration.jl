@@ -56,13 +56,15 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
         diffobj = DifferentiableFunction(objective, g!)
 
-        # TODO: use univariate solver for 1D?
-        res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
-                       Fminbox(), optimizer=LBFGS)#,
-                       #optimizer_o = OptimizeOptions(rel_tol=1e-3))
+        # TODO: Use univariate solver until Optim/#261 is fixed
+        #res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
+        #               Fminbox(), optimizer=LBFGS,
+        #               optimizer_o = OptimizationOptions(show_trace=true,
+                                                         #extended_trace=true))
+        #@inbounds pol[j] = res.minimum[1]
         # TODO: add options
-
-        @inbounds pol[j] = res.minimum[1]
+        res = optimize(objective, model.amin, model.amax)
+        pol[j] = res.minimum
     end
 end
 
@@ -74,9 +76,6 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
                                      maxpolicyiter::Int = 10)
     # v = value function at previous time-step
     # a = policy function at previous time-step / initial guess for update
-    tol = 1e-3
-    scale = 1.0
-    maxpolicyiter = 10
     t = model.T - ti*Δτ
     n = length(x)
     @assert length(a) == n-2
@@ -89,28 +88,24 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     @inbounds rhs[1] = model.Dmin(t, x[1])
     @inbounds rhs[end] = model.Dmax(t, x[end])
 
-    updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
-    Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
-    vnew = Mat\rhs
-
+    vnew = v
     pol = copy(a) # TODO: just update a instead?
-    updatepol!(pol, vnew, model, t, x, Δx)
 
-    for k in 1:maxpolicyiter
+    for k in 0:maxpolicyiter
+        updatepol!(pol, vnew, model, t, x, Δx)
         updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, pol, Δτ, Δx)
-
         Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
 
         # TODO: Use Krylov solver for high-dimensional PDEs
         vold = vnew
         vnew = Mat\rhs
-        updatepol!(pol, vnew, model, t, x, Δx)
 
-        vchange = maximum(abs(vnew-vold)./max(1.,abs(vnew)))
-        if vchange < tol
+        vchange = maximum(abs(vnew-vold)./max(scale,abs(vnew)))
+        if vchange < tol && k > 0
             break
         end
     end
+    updatepol!(pol, vnew, model, t, x, Δx)
 
     return vnew, pol
 end
