@@ -122,7 +122,7 @@ function timeloopiteration(model::HJBOneDim, K::Int, N::Int,
     pol = zeros(K-1, N) # No policy at t = T or at x-boundaries
 
     @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
-    polinit = 0.5*(model.amax-model.amin)*ones(K-1) # initial guess for control
+    polinit = 0.5*(model.amax+model.amin)*ones(K-1) # initial guess for control
     @inbounds v[:,2], pol[:,1] = policynewtonupdate(model, v[:, 1],
                                                     polinit, x, Δx, Δτ, 1)
 

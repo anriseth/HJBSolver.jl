@@ -34,11 +34,11 @@ end
 function policytimestep(model::HJBOneDim,
                         v, avals, x, Δx, Δτ, ti::Int)
     t = model.T - ti*Δτ
-    n = length(x)
+    n = length(v)
 
     # TODO: redo this thing
     newind = ones(Int, n)
-    @inbounds vnew = -maxintfloat(typeof(x[1]))*ones(x)
+    @inbounds vnew = -maxintfloat(typeof(x[1]))*ones(v)
 
     ind12 = zeros(Bool, length(vnew))
 
@@ -56,7 +56,6 @@ function policytimestep(model::HJBOneDim,
             vold = vnew
 
             updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
-
             Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
 
             # TODO: Use Krylov solver for high-dimensional PDEs
