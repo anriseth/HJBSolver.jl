@@ -12,13 +12,14 @@ function createmodel(;T::Float64=1.)
     γ = [5e-2, 0.1]
     c = [-1., -0.9]
 
-    xmin = zeros(2); xmax = [1.,0.5]
-    # TODO: fix the amin, amax
-    amin = -3. * ones(2); amax = ones(2)
+    xmin = zeros(2); xmax = [0.5,0.5]
 
     truesol(t,x) = (t-T)*(x[1]+x[2])^2+vecdot(c,x)
     truepol(t,x) = (1+c+2*(t-T)*(x[1]+x[2]-γ.^2))./(2-2*(t-T)*γ.^2)
     hatf(t,x) = (x[1]+x[2])^2+sum((1-c-2*(t-T)*(x[1]+x[2])^2)./(4-4*(t-T)*γ.^2))
+
+    amin = truepol(0., xmax) - 1e-1
+    amax = truepol(0., xmin) + 1e-1
 
     b(t,x,a) = a-1.
     σ(t,x,a) = (γ.*b(t,x,a)).^2
@@ -49,12 +50,55 @@ function calculateerror_iter(prob::TestProblem2D, K::Vector{Int}, N::Int)
 end
 
 #facts("2D, Policy iteration") do
-K = [201, 101]; N = 3
-prob = createmodel(T=1e-3*N)
-# TODO: calculate error at two-three different space-time points instead
-v, pol = solve(prob.model, K, N)
-#errv, erra1, erra2 = calculateerror_iter(prob, K, N)
+# K = [201, 101]; N = 3
+# prob = createmodel(T=1e-3*N)
+# # TODO: calculate error at two-three different space-time points instead
+# v, pol = solve(prob.model, K, N)
+# #errv, erra1, erra2 = calculateerror_iter(prob, K, N)
+# model = prob.model
+
+# x1 = linspace(model.xmin[1], model.xmax[1], K[1])
+# x2 = linspace(model.xmin[2], model.xmax[2], K[2])
+# x = (collect(x1), collect(x2))
+
+# i,j = ceil(Int, K/2)
+# idxi = K[2]*(i-1) + j
+# xij = [x1[i], x2[j]]
+# w = prob.truevaluefun(0., xij)
+# α = prob.truecontrolfun(0., xij)
+
+# @fact errv --> roughly(0., 1e-10)
+# @fact erra1 --> roughly(0., 1e-10)
+# @fact erra2 --> roughly(0., 1e-10)
+# #end
+
+function calctruesols(t, x, prob)
+    K = [length(xi) for xi in x]
+    v = zeros(reverse(K)...)
+    pol1 = zeros(v)
+    pol2 = zeros(v)
+
+    for i = 1:K[1], j = 1:K[2]
+        xij = [x[1][i],x[2][j]]
+        v[j,i] = prob.truevaluefun(t, xij)
+        pol1[j,i], pol2[j,i] = prob.truecontrolfun(t, xij)
+    end
+    return v, (pol1, pol2)
+end
+
+#facts("2D, Policy timestepping") do
+K = [26, 26]; N = 4
+prob = createmodel(T=1e-2*N)
 model = prob.model
+M = [81, 81]
+avals1 = linspace(model.amin[1], model.amax[1], M[1])
+avals2 = linspace(model.amin[2], model.amax[2], M[2])
+
+
+
+# TODO: calculate error at two-three different space-time points instead
+v, pol = solve(prob.model, K, N, (avals1,avals2))
+#errv, erra1, erra2 = calculateerror_iter(prob, K, N)
 
 x1 = linspace(model.xmin[1], model.xmax[1], K[1])
 x2 = linspace(model.xmin[2], model.xmax[2], K[2])

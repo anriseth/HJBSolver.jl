@@ -129,9 +129,9 @@ function updatepol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
         #diffobj = DifferentiableFunction(objective, g!)
         res = optimize(objective, [pol1[idxi], pol2[idxi]],
                        NelderMead(), OptimizationOptions(autodiff=true))#f_tol=tol,x_tol=tol,
-                                                    #g_tol=tol,autodiff=true))#,
-#                                                    show_trace=true,
-#                                                    extended_trace=true))#,
+        #g_tol=tol,autodiff=true))#,
+        #                                                    show_trace=true,
+        #                                                    extended_trace=true))#,
         #model.amin, model.amax, Fminbox(),
         #optimizer = LBFGS,
         #optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,
