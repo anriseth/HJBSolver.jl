@@ -29,10 +29,13 @@ function updatecoeffs!{T<:Real}(coeff0, coeff1, coeff2, rhs, model, v, t::T, x,
             rhs[j] = v[j] + Δτ*model.f(t,x[j],a)
         end
     end
+
 end
 
 function policytimestep(model::HJBOneDim,
                         v, avals, x, Δx, Δτ, ti::Int)
+    taux = Δτ/Δx
+    htaux2 = 0.5*Δτ/Δx^2
     t = model.T - ti*Δτ
     n = length(v)
 
@@ -47,8 +50,12 @@ function policytimestep(model::HJBOneDim,
     coeff2 = zeros(n-1) # v_{i-1} # TODO: type stability
     rhs = zeros(v)
     # Dirichlet conditions
-    @inbounds rhs[1] = model.Dmin(t, x[1])
-    @inbounds rhs[end] = model.Dmax(t, x[end])
+    if model.bcond[1] == true
+        @inbounds rhs[1] = model.Dfun[1](t)
+    end
+    if model.bcond[2] == true
+        @inbounds rhs[end] = model.Dfun[2](t)
+    end
 
     for i = 1:length(avals)
         @inbounds begin
@@ -57,6 +64,20 @@ function policytimestep(model::HJBOneDim,
 
             updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, a, Δτ, Δx)
             Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
+            # Move to sparse(I,J,K) instead?
+            if model.bcond[1] == false
+                bval = taux*model.b(t,x[1],a)
+                sval2 = htaux2*model.σ(t,x[1],a)^2
+                Mat[1,1:3] = [1.-(sval2-bval), -(bval-2*sval2), -sval2]
+                rhs[1] = v[1] + Δτ*model.f(t,x[1],a)
+            end
+
+            if model.bcond[2] == false
+                bval = taux*model.b(t,x[end],a)
+                sval2 = htaux2*model.σ(t,x[end],a)^2
+                Mat[end,end-2:end] = [-sval2, bval+2*sval2, 1.-(sval2+bval)]
+                rhs[end] = v[end] + Δτ*model.f(t,x[end],a)
+            end
 
             # TODO: Use Krylov solver for high-dimensional PDEs
             vnew = Mat\rhs

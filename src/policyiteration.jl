@@ -84,8 +84,12 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     coeff2 = zeros(n-1) # v_{i-1} # TODO: type stability
     rhs = zeros(x)
     # Dirichlet conditions
-    @inbounds rhs[1] = model.Dmin(t, x[1])
-    @inbounds rhs[end] = model.Dmax(t, x[end])
+    if model.bcond[1] == true
+        @inbounds rhs[1] = model.Dfun[1](t, x[1])
+    end
+    if model.bcond[2] == true
+        @inbounds rhs[end] = model.Dfun[2](t, x[end])
+    end
 
     vnew = v
     pol = copy(a) # TODO: just update a instead?

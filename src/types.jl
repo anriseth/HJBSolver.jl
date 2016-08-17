@@ -12,7 +12,8 @@ type HJBOneDim{T1<:Real} <: AbstractHJB
     amax::T1  # Control maximum value
     xmin::T1  # Domain minimum value
     xmax::T1  # Domain maximum value
-    Dmin::Function # Dirichlet condition on x=xmin
-    Dmax::Function # Dirichlet condition on x=xmax
-    # TODO: assert T>0, amin < amax, xmin < xmax
+    # bcond = (true, false) means Dirichlet condition on x=x_{min},
+    #         but no condition on x=x_{max}
+    bcond::Tuple{Bool,Bool}
+    Dfun::Tuple{Function,Function} # Dirichlet condition on boundaries
 end
