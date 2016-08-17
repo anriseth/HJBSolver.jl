@@ -38,14 +38,14 @@ function policytimestep(model::HJBOneDim,
 
     # TODO: redo this thing
     newind = ones(Int, n)
-    @inbounds vnew = -maxintfloat(typeof(x[1]))*ones(v)
+    @inbounds vnew = fill(-maxintfloat(typeof(v[1])), n)
 
     ind12 = zeros(Bool, length(vnew))
 
-    coeff0 = ones(x)   # v_i
+    coeff0 = ones(v)   # v_i
     coeff1 = zeros(n-1) # v_{i+1} # TODO: type stability
     coeff2 = zeros(n-1) # v_{i-1} # TODO: type stability
-    rhs = zeros(x)
+    rhs = zeros(v)
     # Dirichlet conditions
     @inbounds rhs[1] = model.Dmin(t, x[1])
     @inbounds rhs[end] = model.Dmax(t, x[end])
