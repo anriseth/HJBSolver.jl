@@ -40,6 +40,38 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
     idx = 1./Δx
     hdx2 = 0.5/Δx^2
 
+    begin
+        # Search for control on left boundary
+        function objective(a)
+            @inbounds begin
+                bval = idx*model.b(t,x[1],a[1])
+                sval2 = hdx2*model.σ(t,x[1],a[1])^2
+                coeff1 = -(sval2-bval)
+                coeff2 = -(bval-2*sval2)
+                coeff3 = -sval2
+                return coeff1*v[1] + coeff2*v[2] + coeff3*v[3] - model.f(t,x[1],a[1])
+            end
+        end
+        res = optimize(objective, model.amin, model.amax)
+        @inbounds pol[1] = res.minimum
+    end
+
+    begin
+        # Search for control on right boundary
+        function objective(a)
+            @inbounds begin
+                bval = idx*model.b(t,x[end],a[1])
+                sval2 = hdx2*model.σ(t,x[end],a[1])^2
+                coeff1 = -(sval2+bval)
+                coeff2 = bval+2*sval2
+                coeff3 = -sval2
+                return coeff3*v[end-2] + coeff2*v[end-1] + coeff1*v[end] - model.f(t,x[end],a[1])
+            end
+        end
+        res = optimize(objective, model.amin, model.amax)
+        @inbounds pol[end] = res.minimum
+    end
+
     function hamiltonian(a, j::Int)
         @inbounds begin
             bval = model.b(t,x[j],a[1])
@@ -50,9 +82,8 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
         end
     end
 
-
-    for j = 1:length(pol)
-        objective(a) = hamiltonian(a, j+1) # j+1 as the control only lives on the interior
+    for j = 2:length(pol)-1
+        objective(a) = hamiltonian(a, j)
         # g!(x, out) = ForwardDiff.gradient!(out, objective, x)
         # diffobj = DifferentiableFunction(objective, g!)
 
@@ -60,10 +91,9 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
         #                Fminbox(), optimizer=LBFGS,
         #                optimizer_o = OptimizationOptions(g_tol=1e-3,f_tol=1e-3,x_tol=1e-3))#,
         #@inbounds pol[j] = res.minimum[1]
-        # TODO: Use univariate solver until Optim/#261 is fixed
-        # TODO: add options
+        # TODO: Give the choice of Brent vs Fminbox()?
         res = optimize(objective, model.amin, model.amax)
-        pol[j] = res.minimum
+        @inbounds pol[j] = res.minimum
     end
 end
 
@@ -75,9 +105,12 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
                                      maxpolicyiter::Int = 10)
     # v = value function at previous time-step
     # a = policy function at previous time-step / initial guess for update
+    taux = Δτ/Δx
+    htaux2 = 0.5*Δτ/Δx^2
+
     t = model.T - ti*Δτ
     n = length(x)
-    @assert length(a) == n-2
+    @assert length(a) == n
 
     coeff0 = ones(x)   # v_i
     coeff1 = zeros(n-1) # v_{i+1} # TODO: type stability
@@ -85,10 +118,10 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     rhs = zeros(x)
     # Dirichlet conditions
     if model.bcond[1] == true
-        @inbounds rhs[1] = model.Dfun[1](t, x[1])
+        @inbounds rhs[1] = model.Dfun[1](t)
     end
     if model.bcond[2] == true
-        @inbounds rhs[end] = model.Dfun[2](t, x[end])
+        @inbounds rhs[end] = model.Dfun[2](t)
     end
 
     vnew = v
@@ -98,6 +131,23 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
         updatepol!(pol, vnew, model, t, x, Δx)
         updatecoeffs!(coeff0, coeff1, coeff2, rhs, model, v, t, x, pol, Δτ, Δx)
         Mat = spdiagm((coeff2, coeff0, coeff1), -1:1, n, n)
+
+        @inbounds begin
+            # Move to sparse(I,J,K) instead?
+            if model.bcond[1] == false
+                bval = taux*model.b(t,x[1],pol[1])
+                sval2 = htaux2*model.σ(t,x[1],pol[1])^2
+                Mat[1,1:3] = [1.-(sval2-bval), -(bval-2*sval2), -sval2]
+                rhs[1] = v[1] + Δτ*model.f(t,x[1],pol[1])
+            end
+
+            if model.bcond[2] == false
+                bval = taux*model.b(t,x[end],pol[end])
+                sval2 = htaux2*model.σ(t,x[end],pol[end])^2
+                Mat[end,end-2:end] = [-sval2, bval+2*sval2, 1.-(sval2+bval)]
+                rhs[end] = v[end] + Δτ*model.f(t,x[end],pol[end])
+            end
+        end
 
         # TODO: Use Krylov solver for high-dimensional PDEs
         vold = vnew
@@ -117,10 +167,10 @@ function timeloopiteration(model::HJBOneDim, K::Int, N::Int,
                            Δτ, vinit, x, Δx)
     # Pass v and pol by reference?
     v = zeros(K+1, N+1)
-    pol = zeros(K-1, N) # No policy at t = T or at x-boundaries
+    pol = zeros(K+1, N) # No policy at t = T or at x-boundaries
 
     @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
-    polinit = fill(0.5*(model.amax+model.amin), K-1) # initial guess for control
+    polinit = fill(0.5*(model.amax+model.amin), K+1) # initial guess for control
     @inbounds v[:,2], pol[:,1] = policynewtonupdate(model, v[:, 1],
                                                     polinit, x, Δx, Δτ, 1)
 

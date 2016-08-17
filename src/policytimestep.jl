@@ -87,8 +87,8 @@ function policytimestep(model::HJBOneDim,
             newind[!ind12] = i
         end
     end
-    # newind[1,end] represent boundaries, no control is used there
-    @inbounds pol = avals[newind[2:end-1]]
+
+    @inbounds pol = avals[newind]
 
     return vnew, pol
 end
@@ -98,7 +98,7 @@ function timeloopconstant(model::HJBOneDim, K::Int, N::Int,
                           Δτ, vinit, avals, x, Δx)
     # Pass v and pol by reference?
     v = zeros(K+1, N+1)
-    pol = zeros(K-1, N) # No policy at t = T or at x-boundaries
+    pol = zeros(K+1, N)
 
     @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
 

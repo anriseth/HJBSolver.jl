@@ -28,8 +28,12 @@ function createmodel()
     ρ = p*((μ-r)^2/(2*γ^2*(1-p)) + r)
     truesol(t,x) = exp(ρ*(T-t)).*g(x)
     truepol(t,x) = (μ-r)/(γ^2*(1-p))*x
+    Dfun1(t) = truesol(t,xmin)
+    Dfun2(t) = truesol(t,xmax)
+
     @assert 0 < p < 1 # So that we can use boundary condition v(t,0) = 0 ∀ t
-    model = HJBOneDim(b, σ, f, g, T, amin, amax, xmin, xmax, truesol, truesol)
+    model = HJBOneDim(b, σ, f, g, T, amin, amax, xmin, xmax,
+                      (true,true), (Dfun1, Dfun2))
     return MertonProblem(μ, r, γ, p, model, truesol, truepol)
 end
 
@@ -43,7 +47,7 @@ function calculateerror_const(merton::MertonProblem,K::Int, N::Int, M::Int)
     w = merton.truevaluefun(0., x)
     α = merton.truecontrolfun(0., x[2:end-1])
 
-    return norm(w-v[:,end])/norm(w), norm(α-pol[:,end])/norm(α)
+    return norm(w-v[:,end])/norm(w), norm(α-pol[2:end-1,end])/norm(α)
 end
 
 function calculateerror_iter(merton::MertonProblem, K::Int, N::Int)
@@ -56,7 +60,7 @@ function calculateerror_iter(merton::MertonProblem, K::Int, N::Int)
     w = merton.truevaluefun(0., x)
     α = merton.truecontrolfun(0., x[2:end-1])
 
-    return norm(w-v[:,end])/norm(w), norm(α-pol[:,end])/norm(α)
+    return norm(w-v[:,end])/norm(w), norm(α-pol[2:end-1,end])/norm(α)
 end
 
 
