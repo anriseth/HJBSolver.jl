@@ -49,28 +49,31 @@ function calculateerror_iter(prob::TestProblem2D, K::Vector{Int}, N::Int)
     abs(α[2]-pol[2][idxi,end])/abs(α[2])
 end
 
-#facts("2D, Policy iteration") do
-# K = [201, 101]; N = 3
-# prob = createmodel(T=1e-3*N)
-# # TODO: calculate error at two-three different space-time points instead
-# v, pol = solve(prob.model, K, N)
-# #errv, erra1, erra2 = calculateerror_iter(prob, K, N)
-# model = prob.model
+facts("2D, Policy iteration") do
+    K = [51, 51]; N = 10
+    prob = createmodel(T=1e-2*N)
+    # TODO: calculate error at two-three different space-time points instead
 
-# x1 = linspace(model.xmin[1], model.xmax[1], K[1])
-# x2 = linspace(model.xmin[2], model.xmax[2], K[2])
-# x = (collect(x1), collect(x2))
+    errv, erra1, erra2 = calculateerror_iter(prob, K, N)
+    @fact errv --> roughly(0., 1e-10)
+    @fact erra1 --> roughly(0., 1e-10)
+    @fact erra2 --> roughly(0., 1e-10)
 
-# i,j = ceil(Int, K/2)
-# idxi = K[2]*(i-1) + j
-# xij = [x1[i], x2[j]]
-# w = prob.truevaluefun(0., xij)
-# α = prob.truecontrolfun(0., xij)
+end
+#     model = prob.model
+#     v, pol = solve(model, K, N)
+#     x1 = linspace(model.xmin[1], model.xmax[1], K[1])
+#     x2 = linspace(model.xmin[2], model.xmax[2], K[2])
+#     x = (collect(x1), collect(x2))
 
-# @fact errv --> roughly(0., 1e-10)
-# @fact erra1 --> roughly(0., 1e-10)
-# @fact erra2 --> roughly(0., 1e-10)
-# #end
+#     i,j = ceil(Int, K/2)
+#     idxi = K[2]*(i-1) + j
+#     xij = [x1[i], x2[j]]
+#     w = prob.truevaluefun(0., xij)
+#     α = prob.truecontrolfun(0., xij)
+
+
+# end
 
 function calctruesols(t, x, prob)
     K = [length(xi) for xi in x]
