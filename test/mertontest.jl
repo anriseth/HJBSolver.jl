@@ -47,7 +47,7 @@ function calculateerror_const(merton::MertonProblem,K::Int, N::Int, M::Int)
     w = merton.truevaluefun(0., x)
     α = merton.truecontrolfun(0., x[2:end-1])
 
-    return norm(w-v[:,end])/norm(w), norm(α-pol[2:end-1,end])/norm(α)
+    return norm(w-v[:,1])/norm(w), norm(α-pol[2:end-1,1])/norm(α)
 end
 
 function calculateerror_iter(merton::MertonProblem, K::Int, N::Int)
@@ -60,7 +60,7 @@ function calculateerror_iter(merton::MertonProblem, K::Int, N::Int)
     w = merton.truevaluefun(0., x)
     α = merton.truecontrolfun(0., x[2:end-1])
 
-    return norm(w-v[:,end])/norm(w), norm(α-pol[2:end-1,end])/norm(α)
+    return norm(w-v[:,1])/norm(w), norm(α-pol[2:end-1,1])/norm(α)
 end
 
 

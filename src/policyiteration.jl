@@ -108,7 +108,7 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     taux = Δτ/Δx
     htaux2 = 0.5*Δτ/Δx^2
 
-    t = model.T - ti*Δτ
+    t = (ti-1)*Δτ
     n = length(x)
     @assert length(a) == n
 
@@ -169,17 +169,17 @@ function timeloopiteration(model::HJBOneDim, K::Int, N::Int,
     v = zeros(K+1, N+1)
     pol = zeros(K+1, N) # No policy at t = T or at x-boundaries
 
-    @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
+    @inbounds v[:,N+1] = vinit # We use forward time t instead of backward time τ
     polinit = fill(0.5*(model.amax+model.amin), K+1) # initial guess for control
-    @inbounds v[:,2], pol[:,1] = policynewtonupdate(model, v[:, 1],
-                                                    polinit, x, Δx, Δτ, 1)
+    @inbounds v[:,N], pol[:,N] = policynewtonupdate(model, v[:,N+1],
+                                                    polinit, x, Δx, Δτ, N)
 
-    for j = 2:N
+    for j = N-1:-1:1
         @inbounds begin
             # t = (N-j)*Δτ
             # TODO: pass v-column, pol-column by reference?
-            v[:,j+1], pol[:,j] = policynewtonupdate(model, v[:, j],
-                                                    pol[:,j-1], x, Δx, Δτ, j)
+            v[:,j], pol[:,j] = policynewtonupdate(model, v[:,j+1],
+                                                  pol[:,j+1], x, Δx, Δτ, j)
         end
     end
 

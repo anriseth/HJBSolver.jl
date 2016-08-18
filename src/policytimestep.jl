@@ -36,7 +36,7 @@ function policytimestep(model::HJBOneDim,
                         v, avals, x, Δx, Δτ, ti::Int)
     taux = Δτ/Δx
     htaux2 = 0.5*Δτ/Δx^2
-    t = model.T - ti*Δτ
+    t = (ti-1)*Δτ
     n = length(v)
 
     # TODO: redo this thing
@@ -100,14 +100,14 @@ function timeloopconstant(model::HJBOneDim, K::Int, N::Int,
     v = zeros(K+1, N+1)
     pol = zeros(K+1, N)
 
-    @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
+    @inbounds v[:,end] = vinit # We use forward time t instead of backward time τ
 
-    for j = 1:N
+    for j = N:-1:1
         @inbounds begin
-            # t = (N-j)*Δτ
+            # t = (j-1)*Δτ
             # TODO: pass v-column, pol-column by reference?
-            v[:,j+1], pol[:,j] = policytimestep(model, v[:, j],
-                                                avals, x, Δx, Δτ, j)
+            v[:,j], pol[:,j] = policytimestep(model, v[:,j+1],
+                                              avals, x, Δx, Δτ, j)
         end
     end
 
