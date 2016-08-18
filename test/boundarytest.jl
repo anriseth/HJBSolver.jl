@@ -29,8 +29,8 @@ facts("1D, no boundary condition, Constant Policy") do
     vcheck = 0.6230938105907916
     polcheck = 0.6455696202531646
 
-    @fact v[end,1] --> roughly(vcheck)
-    @fact pol[end,1] --> roughly(polcheck)
+    @fact v[end,1] --> roughly(vcheck, 1e-5)
+    @fact pol[end,1] --> roughly(polcheck, 1e-5)
 end
 
 facts("1D, no boundary condition, Policy-iteration") do
@@ -42,8 +42,8 @@ facts("1D, no boundary condition, Policy-iteration") do
     vcheck = 0.6246558092538466
     polcheck = 0.6398206678262762
 
-    @fact v[end,1] --> roughly(vcheck)
-    @fact pol[end,1] --> roughly(polcheck)
+    @fact v[end,1] --> roughly(vcheck, 1e-5)
+    @fact pol[end,1] --> roughly(polcheck, 1e-5)
 end
 
 
