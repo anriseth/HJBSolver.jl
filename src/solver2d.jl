@@ -13,7 +13,7 @@ function setIJV!{T<:Real}(I::Vector{Int},J::Vector{Int},V::Vector{T},
 end
 
 function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
-                                a1::Vector{T}, a2::Vector{T}, Δτ::T, Δx::Vector{T})
+                                a1::Vector{T}, a2::Vector{T}, Δt::T, Δx::Vector{T})
     #Base.info("Running updatecoeffs")
     # TODO: change name to updatesystem or something like that
     # Updates:
@@ -27,10 +27,10 @@ function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     # x      = tuple of vectors of x-values
     # a1     = policy-values on interior, element 1
     # a2     = policy-values on interior, element 2
-    # Δτ     = time-step size
+    # Δt     = time-step size
     # Δx     = spacial step length
-    taux = Δτ ./Δx
-    htaux2 = 0.5*Δτ ./ Δx.^2
+    taux = Δt ./Δx
+    htaux2 = 0.5*Δt ./ Δx.^2
     K = [length(xi) for xi in x]
 
     #TODO: add @inbounds
@@ -78,7 +78,7 @@ function updatecoeffs!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
         counter = setIJV!(I,J,V,idxi,idxj2f,coeff2f, counter)
         counter = setIJV!(I,J,V,idxi,idxj2b,coeff2b, counter)
 
-        rhs[idxi] = v[idxi] + Δτ*model.f(t,xij,aij)
+        rhs[idxi] = v[idxi] + Δt*model.f(t,xij,aij)
     end
 
     @assert counter == length(V)
@@ -144,13 +144,13 @@ end
 
 function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
                                      v, a1, a2, x::Tuple{Vector{T},Vector{T}},
-                                     Δx::Vector{T}, Δτ, ti::Int;
+                                     Δx::Vector{T}, Δt, ti::Int;
                                      tol = 1e-3,
                                      scale = 1.0,
                                      maxpolicyiter::Int = 10)
     # v  = value function at previous time-step
     # an = policy function at previous time-step / initial guess for update
-    t = model.T - ti*Δτ
+    t = (ti-1)*Δt
     @show t
     n = length(v)
     K = [length(xi) for xi in x]
@@ -171,7 +171,7 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
 
     for k in 0:maxpolicyiter
         updatepol!(pol1, pol2, vnew, model, t, x, Δx)
-        updatecoeffs!(I,J,V, rhs, model, v, t, x, pol1, pol2, Δτ, Δx)
+        updatecoeffs!(I,J,V, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
 
         Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
 
@@ -181,7 +181,7 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
 
         vchange = maximum(abs(vnew-vold)./max(1.,abs(vnew)))
         @show vchange
-        if vchange < Δτ*tol && k>0
+        if vchange < Δt*tol && k>0
             break
         end
     end
@@ -192,16 +192,15 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
 end
 
 function policytimestep{T<:Real}(model::HJBTwoDim{T},
-                                 v, a1, a2, x::Tuple{Vector{T},Vector{T}},
-                                 Δx::Vector{T}, Δτ, ti::Int, avals::Tuple)
+                                 v, x::Tuple{Vector{T},Vector{T}},
+                                 Δx::Vector{T}, Δt, ti::Int, avals::Tuple)
     # v  = value function at previous time-step
     # an = policy function at previous time-step / initial guess for update
     Base.info("Discrete policy step update")
-    t = model.T - ti*Δτ
+    t = (ti-1)*Δt
     @show t
     n = length(v)
     K = [length(xi) for xi in x]
-    @assert length(a1) == n && length(a2) == n
 
     # Elements in sparse system matrix (n\times n) size
     interiornnz = 5*prod(K-2)
@@ -222,7 +221,7 @@ function policytimestep{T<:Real}(model::HJBTwoDim{T},
         a1const[:] = avals[1][i]
         a2const[:] = avals[2][j]
 
-        updatecoeffs!(I,J,V, rhs, model, v, t, x, a1const, a2const, Δτ, Δx)
+        updatecoeffs!(I,J,V, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
 
         # TODO: Remove the Base.error thing, just for checking
         Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
@@ -245,7 +244,7 @@ end
 
 
 function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
-                           Δτ, vinit, x::Tuple, Δx::Vector)
+                           Δt, vinit, x::Tuple, Δx::Vector)
     # Pass v and pol by reference?
     v = zeros(length(vinit), N+1)
     # No policy at t = T
@@ -253,31 +252,31 @@ function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
     pol2 = zeros(length(vinit), N)
     pol = (pol1, pol2)
 
-    @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
+    @inbounds v[:,N+1] = vinit # We use forward time t instead of backward time t
 
     # initial guess for control
-    pol1init = 0.5*(model.amax[1]+model.amin[1])*ones(prod(K))
-    pol2init = 0.5*(model.amax[2]+model.amin[2])*ones(prod(K))
-    @inbounds v[:,2], pol1[:,1], pol2[:,1] = policynewtonupdate(model, v[:,1], pol1init, pol2init,
-                                                                x, Δx, Δτ, 1)
+    pol1init = fill(0.5*(model.amax[1]+model.amin[1]), prod(K))
+    pol2init = fill(model.amax[2]+model.amin[2]), prod(K))
+    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policynewtonupdate(model, v[:,N+1], pol1init, pol2init,
+                                                                x, Δx, Δt, N)
     #@show pol1[:,1]
     #@show pol2[:,1]
     #@show v[:,2]
     #Base.error("Exit")
 
-    @inbounds for j = 2:N
-        # t = (N-j)*Δτ
+    @inbounds for j = N-1:-1:1
+        # t = (j-1)*Δt
         # TODO: pass v-column, pol-column by reference?
-        @inbounds (v[:,j+1], pol1[:,j],
-                   pol2[:,j]) = policynewtonupdate(model, v[:,j], pol1[:,j-1], pol2[:,j-1],
-                                                   x, Δx, Δτ, j)
+        @inbounds (v[:,j], pol1[:,j],
+                   pol2[:,j]) = policynewtonupdate(model, v[:,j+1], pol1[:,j+1], pol2[:,j+1],
+                                                   x, Δx, Δt, j)
     end
 
     return v, pol
 end
 
 function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
-                           Δτ, vinit, x::Tuple, Δx::Vector, avals::Tuple)
+                           Δt, vinit, x::Tuple, Δx::Vector, avals::Tuple)
     Base.info("Policy timestepping")
     # Pass v and pol by reference?
     v = zeros(length(vinit), N+1)
@@ -286,24 +285,21 @@ function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
     pol2 = zeros(length(vinit), N)
     pol = (pol1, pol2)
 
-    @inbounds v[:,1] = vinit # We use forward time t instead of backward time τ
+    @inbounds v[:,N+1] = vinit
 
-    # initial guess for control
-    pol1init = 0.5*(model.amax[1]+model.amin[1])*ones(prod(K))
-    pol2init = 0.5*(model.amax[2]+model.amin[2])*ones(prod(K))
-    @inbounds v[:,2], pol1[:,1], pol2[:,1] = policytimestep(model, v[:,1], pol1init, pol2init,
-                                                                x, Δx, Δτ, 1, avals)
+    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policytimestep(model, v[:,N+1],
+                                                            x, Δx, Δt, N, avals)
     #@show pol1[:,1]
     #@show pol2[:,1]
     #@show v[:,2]
     #Base.error("Exit")
 
-    @inbounds for j = 2:N
-        # t = (N-j)*Δτ
+    @inbounds for j = N-1:-1:1
+        # t = (j-1)*Δt
         # TODO: pass v-column, pol-column by reference?
-        @inbounds (v[:,j+1], pol1[:,j],
-                   pol2[:,j]) = policytimestep(model, v[:,j], pol1[:,j-1], pol2[:,j-1],
-                                                 x, Δx, Δτ, j, avals)
+        @inbounds (v[:,j], pol1[:,j],
+                   pol2[:,j]) = policytimestep(model, v[:,j+1], pol1[:,j+1], pol2[:,j+1],
+                                                 x, Δx, Δt, j, avals)
     end
 
     return v, pol
@@ -317,7 +313,7 @@ function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int)
     x2 = linspace(model.xmin[2], model.xmax[2], K[2])
     x = (collect(x1), collect(x2))
     Δx = (model.xmax-model.xmin)./(K-1) # TODO: use diff(x) to accomodate non-uniform grid
-    Δτ = model.T/N # TODO: introduce non-uniform timesteps?
+    Δt = model.T/N # TODO: introduce non-uniform timesteps?
 
     vinit = zeros(T1, prod(K))
     for i = 1:K[1], j = 1:K[2]
@@ -326,7 +322,7 @@ function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int)
         vinit[idx] = model.g(xij)
     end
 
-    v, pol = timeloopiteration(model, K, N, Δτ, vinit, x, Δx)
+    v, pol = timeloopiteration(model, K, N, Δt, vinit, x, Δx)
     return v, pol
 end
 
@@ -341,7 +337,7 @@ function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int,
     x2 = linspace(model.xmin[2], model.xmax[2], K[2])
     x = (collect(x1), collect(x2))
     Δx = (model.xmax-model.xmin)./(K-1) # TODO: use diff(x) to accomodate non-uniform grid
-    Δτ = model.T/N # TODO: introduce non-uniform timesteps?
+    Δt = model.T/N # TODO: introduce non-uniform timesteps?
 
     vinit = zeros(T1, prod(K))
     for i = 1:K[1], j = 1:K[2]
@@ -350,6 +346,6 @@ function solve{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int,
         vinit[idx] = model.g(xij)
     end
 
-    v, pol = timeloopiteration(model, K, N, Δτ, vinit, x, Δx, avals)
+    v, pol = timeloopiteration(model, K, N, Δt, vinit, x, Δx, avals)
     return v, pol
 end
