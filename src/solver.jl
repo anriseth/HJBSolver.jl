@@ -5,7 +5,7 @@ export solve
 include("policyiteration.jl") # Optimize over control in each timestep
 include("policytimestep.jl")  # Choose from discrete set of controls in each timestep
 
-function solveconstant(model::HJBOneDim, K::Int, N::Int, M::Int)
+function solveconstant{T<:Real}(model::HJBOneDim{T}, K::Int, N::Int, M::Int)
     # TODO: better names
     # K+1 = number of points in space domain
     # N+1 = number of points in time domain
@@ -15,7 +15,10 @@ function solveconstant(model::HJBOneDim, K::Int, N::Int, M::Int)
     Δx = (model.xmax-model.xmin)/K # TODO: use diff(x) to accomodate non-uniform grid
     Δτ = model.T/N # TODO: introduce non-uniform timesteps?
 
-    vinit::Vector{Float64} = model.g(x)
+    vinit = zeros(x)
+    for i = 1:length(x)
+        vinit[i] = model.g(x[i])
+    end
 
     v, pol = timeloopconstant(model, K, N, Δτ, vinit, avals, x, Δx)
     return v, pol
@@ -28,7 +31,10 @@ function solveiteration(model::HJBOneDim, K::Int, N::Int)
     Δx = (model.xmax-model.xmin)/K # TODO: use diff(x) to accomodate non-uniform grid
     Δτ = model.T/N # TODO: introduce non-uniform timesteps?
 
-    vinit::Vector{Float64} = model.g(x)
+    vinit = zeros(x)
+    for i = 1:length(x)
+        vinit[i] = model.g(x[i])
+    end
 
     v, pol = timeloopiteration(model, K, N, Δτ, vinit, x, Δx)
     return v, pol
