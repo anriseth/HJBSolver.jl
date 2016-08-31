@@ -41,7 +41,7 @@ function calculateerror_const(merton::MertonProblem,K::Int, N::Int, M::Int)
     @time v, pol = solve(merton.model, K, N, M)
     model = merton.model
 
-    x = linspace(model.xmin, model.xmax, K+1)
+    x = linspace(model.xmin, model.xmax, K)
     Δτ = model.T/N
 
     w = merton.truevaluefun(0., x)
@@ -54,7 +54,7 @@ function calculateerror_iter(merton::MertonProblem, K::Int, N::Int)
     @time v, pol = solve(merton.model, K, N)
     model = merton.model
 
-    x = linspace(model.xmin, model.xmax, K+1)
+    x = linspace(model.xmin, model.xmax, K)
     Δτ = model.T/N
 
     w = merton.truevaluefun(0., x)
@@ -65,7 +65,7 @@ end
 
 
 facts("Constant policy approximation, Merton") do
-    K = 2^8; N = 2^7; M = 2^7
+    K = 2^8+1; N = 2^7; M = 2^7
     merton = createmodel()
     # TODO: calculate error at two-three different space-time points instead
     errv, erra = calculateerror_const(merton, K, N, M)
@@ -75,7 +75,7 @@ facts("Constant policy approximation, Merton") do
 end
 
 facts("Policy iteration, Merton") do
-    K = 2^8; N = 2^7
+    K = 2^8+1; N = 2^7
     merton = createmodel()
     # TODO: calculate error at two-three different space-time points instead
     errv, erra = calculateerror_iter(merton, K, N)

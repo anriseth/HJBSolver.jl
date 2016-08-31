@@ -21,7 +21,7 @@ end
 
 
 facts("1D, no boundary condition, Constant Policy") do
-    K = 100; N = 60;  M = 80
+    K = 101; N = 60;  M = 80
     model = createmodel()
 
     @time v, pol = solve(model, K, N, M)
@@ -34,7 +34,7 @@ facts("1D, no boundary condition, Constant Policy") do
 end
 
 facts("1D, no boundary condition, Policy-iteration") do
-    K = 100; N = 60;
+    K = 101; N = 60;
     model = createmodel()
 
     @time v, pol = solve(model, K, N)
