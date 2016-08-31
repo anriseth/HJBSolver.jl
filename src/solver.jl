@@ -7,12 +7,12 @@ include("policytimestep.jl")  # Choose from discrete set of controls in each tim
 
 function solveconstant{T<:Real}(model::HJBOneDim{T}, K::Int, N::Int, M::Int)
     # TODO: better names
-    # K+1 = number of points in space domain
+    # K = number of points in space domain
     # N+1 = number of points in time domain
     # M   = number of control values
-    x = linspace(model.xmin, model.xmax, K+1)
+    x = linspace(model.xmin, model.xmax, K)
     avals = linspace(model.amin, model.amax, M)
-    Δx = (model.xmax-model.xmin)/K # TODO: use diff(x) to accomodate non-uniform grid
+    Δx = (model.xmax-model.xmin)/(K-1) # TODO: use diff(x) to accomodate non-uniform grid
     Δτ = model.T/N # TODO: introduce non-uniform timesteps?
 
     vinit = zeros(x)
@@ -20,15 +20,15 @@ function solveconstant{T<:Real}(model::HJBOneDim{T}, K::Int, N::Int, M::Int)
         vinit[i] = model.g(x[i])
     end
 
-    v, pol = timeloopconstant(model, K, N, Δτ, vinit, avals, x, Δx)
+    v, pol = timeloopconstant(model, N, Δτ, vinit, avals, x, Δx)
     return v, pol
 end
 
 function solveiteration(model::HJBOneDim, K::Int, N::Int)
-    # K+1 = number of points in space domain
+    # K = number of points in space domain
     # N+1 = number of points in time domain
-    x = linspace(model.xmin, model.xmax, K+1)
-    Δx = (model.xmax-model.xmin)/K # TODO: use diff(x) to accomodate non-uniform grid
+    x = linspace(model.xmin, model.xmax, K)
+    Δx = (model.xmax-model.xmin)/(K-1) # TODO: use diff(x) to accomodate non-uniform grid
     Δτ = model.T/N # TODO: introduce non-uniform timesteps?
 
     vinit = zeros(x)
@@ -36,7 +36,7 @@ function solveiteration(model::HJBOneDim, K::Int, N::Int)
         vinit[i] = model.g(x[i])
     end
 
-    v, pol = timeloopiteration(model, K, N, Δτ, vinit, x, Δx)
+    v, pol = timeloopiteration(model, N, Δτ, vinit, x, Δx)
     return v, pol
 end
 

@@ -163,14 +163,15 @@ function policynewtonupdate{T<:Real}(model::HJBOneDim{T},
     return vnew, pol
 end
 
-function timeloopiteration(model::HJBOneDim, K::Int, N::Int,
+function timeloopiteration(model::HJBOneDim, N::Int,
                            Δτ, vinit, x, Δx)
     # Pass v and pol by reference?
-    v = zeros(K+1, N+1)
-    pol = zeros(K+1, N) # No policy at t = T or at x-boundaries
+    K = length(x)
+    v = zeros(K, N+1)
+    pol = zeros(K, N) # No policy at t = T
 
     @inbounds v[:,N+1] = vinit # We use forward time t instead of backward time τ
-    polinit = fill(0.5*(model.amax+model.amin), K+1) # initial guess for control
+    polinit = fill(0.5*(model.amax+model.amin), K) # initial guess for control
     @inbounds v[:,N], pol[:,N] = policynewtonupdate(model, v[:,N+1],
                                                     polinit, x, Δx, Δτ, N)
 

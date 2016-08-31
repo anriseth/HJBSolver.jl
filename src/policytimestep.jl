@@ -94,11 +94,12 @@ function policytimestep(model::HJBOneDim,
 end
 
 
-function timeloopconstant(model::HJBOneDim, K::Int, N::Int,
+function timeloopconstant(model::HJBOneDim, N::Int,
                           Δτ, vinit, avals, x, Δx)
     # Pass v and pol by reference?
-    v = zeros(K+1, N+1)
-    pol = zeros(K+1, N)
+    K = length(x)
+    v = zeros(K, N+1)
+    pol = zeros(K, N)
 
     @inbounds v[:,end] = vinit # We use forward time t instead of backward time τ
 
