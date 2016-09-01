@@ -8,4 +8,6 @@ include("solver.jl")
 
 include("solver2d.jl")
 
+include("solver2d_weirdboundary.jl")
+
 end # module
