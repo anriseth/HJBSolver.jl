@@ -63,8 +63,8 @@ facts("2D, Policy iteration") do
 end
 
 facts("2D, Policy timestepping") do
-    K = [26, 26]; N = 10; M = (20,20)
-    Δt = 5e-2
+    K = [21, 21]; N = 5; M = (25,25)
+    Δt = 1e-1
     prob = createmodel(T=Δt*N)
     model = prob.model
 
@@ -75,8 +75,8 @@ facts("2D, Policy timestepping") do
 
     errv, erra1, erra2 = calculateerror(prob, K, v, pol)
     @fact errv --> roughly(0., 1e-2)
-    @fact erra1 --> roughly(0., 0.25)
-    @fact erra2 --> roughly(0., 0.25)
+    @fact erra1 --> roughly(0., 0.3)
+    @fact erra2 --> roughly(0., 0.3)
 end
 
 
