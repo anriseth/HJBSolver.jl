@@ -81,6 +81,7 @@ function updatesystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
             rhs[idxi] = v[idxi] + Δt*model.f(t,xij,aij)
         end
     end
+    @assert counter == length(V)
 end
 
 function updatepol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
@@ -133,7 +134,6 @@ function updatepol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
             pol1[idxi], pol2[idxi] = res.minimum
         end
     end
-
 end
 
 function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},

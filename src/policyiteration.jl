@@ -40,7 +40,7 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
     idx = 1./Δx
     hdx2 = 0.5/Δx^2
 
-    begin
+    let
         # Search for control on left boundary
         function objective(a)
             @inbounds begin
@@ -56,7 +56,7 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
         @inbounds pol[1] = res.minimum
     end
 
-    begin
+    let
         # Search for control on right boundary
         function objective(a)
             @inbounds begin
