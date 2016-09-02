@@ -1,4 +1,4 @@
-# TODO: better names for the functions
+using ForwardDiff, Optim
 
 function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
                                         a1::Vector{T}, a2::Vector{T}, Δt::T, Δx::Vector{T})
@@ -63,6 +63,9 @@ function updateboundarysystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     5.  For x_1 = xmax[1], x_2 interior, approximate x_1 differential operators with backward difference
     6.  For x = xmax, approximate all operators with backward difference
     ==#
+    taux = Δt ./Δx
+    htaux2 = 0.5*Δt ./ Δx.^2
+    K = [length(xi) for xi in x]
 
     # 1. Dirichlet condition for x = 0
     counter = 0
@@ -217,7 +220,7 @@ let
             coeff1bb  = -sval2[1]*htaux2[1]
             coeff2f   = -(sval2[2]*htaux2[2] + max(bval[2],0.)*taux[2])
             coeff2b   = -(sval2[2]*htaux2[2] - min(bval[2],0.)*taux[2])
-            coeff0    = 1.0-(coeff1f+coeff1b + coeff2b+coeff2bb)
+            coeff0    = 1.0-(coeff1b+coeff1bb + coeff2f+coeff2b)
 
             counter   = setIJV!(I,J,V,idxi,idxi,coeff0, counter)
             counter   = setIJV!(I,J,V,idxi,idxj1b,coeff1b, counter)
@@ -247,7 +250,7 @@ let
     coeff1bb  = -sval2[1]*htaux2[1]
     coeff2b   = 2*sval2[2]*htaux2[2] + bval[2]*taux[2]
     coeff2bb  = -sval2[2]*htaux2[2]
-    coeff0    = 1.0-(coeff1f+coeff1b + coeff2b+coeff2bb)
+    coeff0    = 1.0-(coeff1b+coeff1bb + coeff2b+coeff2bb)
 
     counter   = setIJV!(I,J,V,idxi,idxi,coeff0, counter)
     counter   = setIJV!(I,J,V,idxi,idxj1b,coeff1b, counter)
@@ -324,6 +327,8 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
     4.  For x_2 = xmax[2], pol1 normal, pol2 backward difference
     5.  For x_1 = xmax[1], pol1 backward difference, pol2 normal
     6.  For x = xmax, pol1 and pol 2 backward difference
+
+    # TODO: how to deal with pol-values that are set to NaN? Optim dies
     ==#
 
     # Loops over each interior x value and optimises the control
@@ -334,11 +339,12 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
     hdx2 = 0.5 ./ Δx.^2
 
     # 1.  For x = 0, pol1 and pol 2 is NaN
-    pol1[1] = NaN; pol2[1] = NaN
+    # pol1[1] = NaN; pol2[1] = NaN
 
     # 2.  For x_1 = 0, pol1 = NaN, pol2 normal
     i = 1
     for j = 2:K[2]-1
+        #@show (i,j)
         xij = [x[1][i], x[2][j]]
         idxi = K[2]*(i-1) + j
         idxj2f = idxi + 1; idxj2b = idxi - 1
@@ -347,21 +353,22 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
             bval = model.b(t,xij,a)
             sval2 = model.σ(t,xij,a).^2
 
-            coeff2f = sval2[2]*htaux2[2] + max(bval[2],0.)*taux[2]
-            coeff2b = sval2[2]*htaux2[2] - min(bval[2],0.)*taux[2]
+            coeff2f = sval2[2]*hdx2[2] + max(bval[2],0.)*invdx[2]
+            coeff2b = sval2[2]*hdx2[2] - min(bval[2],0.)*invdx[2]
             coeff0 = -(coeff2f+coeff2b)
 
-            return (coeff0*v[idxi] + coeff2f*v[idxj2f] + coeff2b*v[idxj2b] +
-                    model.f(t,xij,a))
+            return -(coeff0*v[idxi] + coeff2f*v[idxj2f] + coeff2b*v[idxj2b] +
+                     model.f(t,xij,a))
         end
 
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
         diffobj = DifferentiableFunction(objective, g!)
         res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
                        model.amin, model.amax, Fminbox(),
-                       optimizer = LBFGS)
-        pol1[idxi] = NaN
-        pol2[idxi] = res.minimum[2]
+                       optimizer = LBFGS)#, optimizer_o=OptimizationOptions(show_trace=true, extended_trace=true))
+        #pol1[idxi] = NaN
+        # pol2[idxi] = res.minimum[2]
+        pol1[idxi], pol2[idxi] = res.minimum
     end
 
     # 2.1 For x_2 = xmax[2], pol1 = NaN, pol2 backward difference
@@ -374,12 +381,12 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
         function objective(a)
             bval = model.b(t,xij,a)
             sval2 = model.σ(t,xij,a).^2
-            coeff2b = -(2*sval2[2]*htaux2[2] + bval[2]*taux[2])
-            coeff2bb = sval2[2]*htaux2[2]
+            coeff2b = -(2*sval2[2]*hdx2[2] + bval[2]*invdx[2])
+            coeff2bb = sval2[2]*hdx2[2]
             coeff0 = -(coeff2b+coeff2bb)
 
-            return (coeff0*v[idxi] + coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
-                    model.f(t,xij,a))
+            return -(coeff0*v[idxi] + coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
+                     model.f(t,xij,a))
         end
 
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
@@ -387,8 +394,9 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
         res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
                        model.amin, model.amax, Fminbox(),
                        optimizer = LBFGS)
-        pol1[idxi] = NaN
-        pol2[idxi] = res.minimum[2]
+        #pol1[idxi] = NaN
+        #pol2[idxi] = res.minimum[2]
+        pol1[idxi], pol2[idxi] = res.minimum
     end
 
     # 3.  For x_2 = 0, pol1 normal, pol2 = NaN
@@ -402,12 +410,12 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
             bval = model.b(t,xij,a)
             sval2 = model.σ(t,xij,a).^2
 
-            coeff1f = sval2[1]*htaux1[1] + max(bval[1],0.)*taux[1]
-            coeff1b = sval2[1]*htaux1[1] - min(bval[1],0.)*taux[1]
+            coeff1f = sval2[1]*hdx2[1] + max(bval[1],0.)*invdx[1]
+            coeff1b = sval2[1]*hdx2[1] - min(bval[1],0.)*invdx[1]
             coeff0 = -(coeff1f+coeff1b)
 
-            return (coeff0*v[idxi] + coeff1f*v[idxj1f] + coeff1b*v[idxj1b] +
-                    model.f(t,xij,a))
+            return -(coeff0*v[idxi] + coeff1f*v[idxj1f] + coeff1b*v[idxj1b] +
+                     model.f(t,xij,a))
         end
 
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
@@ -415,8 +423,9 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
         res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
                        model.amin, model.amax, Fminbox(),
                        optimizer = LBFGS)
-        pol1[idxi] = res.minimum[1]
-        pol2[idxi] = NaN
+        # pol1[idxi] = res.minimum[1]
+        # pol2[idxi] = NaN
+        pol1[idxi], pol2[idxi] = res.minimum
     end
 
     # 3.1 For x_1 = xmax[1], pol1 backward difference, pol2 = NaN
@@ -429,12 +438,12 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
         function objective(a)
             bval = model.b(t,xij,a)
             sval2 = model.σ(t,xij,a).^2
-            coeff1b = -(2*sval2[1]*htaux2[1] + bval[1]*taux[1])
-            coeff1bb = sval2[1]*htaux2[1]
+            coeff1b = -(2*sval2[1]*hdx2[1] + bval[1]*invdx[1])
+            coeff1bb = sval2[1]*hdx2[1]
             coeff0 = -(coeff1b+coeff1bb)
 
-            return (coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
-                    model.f(t,xij,a))
+            return -(coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
+                     model.f(t,xij,a))
         end
 
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
@@ -442,8 +451,9 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
         res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
                        model.amin, model.amax, Fminbox(),
                        optimizer = LBFGS)
-        pol1[idxi] = res.minimum[1]
-        pol2[idxi] = NaN
+        # pol1[idxi] = res.minimum[1]
+        # pol2[idxi] = NaN
+        pol1[idxi], pol2[idxi] = res.minimum
     end
 
     # 4.  For x_2 = xmax[2], pol1 normal, pol2 backward difference
@@ -458,15 +468,15 @@ function updateboundarypol!(pol1, pol2, v, model::HJBTwoDim, t,
             function objective(a)
                 bval      = model.b(t,xij,a)
                 sval2     = model.σ(t,xij,a).^2
-                coeff1f   = sval2[1]*htaux2[1] + max(bval[1],0.)*taux[1]
-                coeff1b   = sval2[1]*htaux2[1] - min(bval[1],0.)*taux[1]
-                coeff2b   = -(2*sval2[2]*htaux2[2] + bval[2]*taux[2])
-                coeff2bb  = sval2[2]*htaux2[2]
+                coeff1f   = sval2[1]*hdx2[1] + max(bval[1],0.)*invdx[1]
+                coeff1b   = sval2[1]*hdx2[1] - min(bval[1],0.)*invdx[1]
+                coeff2b   = -(2*sval2[2]*hdx2[2] + bval[2]*invdx[2])
+                coeff2bb  = sval2[2]*hdx2[2]
                 coeff0    = -(coeff1f+coeff1b + coeff2b+coeff2bb)
 
-                return (coeff0*v[idxi] + coeff1f*v[idxj1f] + coeff1b*v[idxj1b] +
-                        coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
-                        model.f(t,xij,a))
+                return -(coeff0*v[idxi] + coeff1f*v[idxj1f] + coeff1b*v[idxj1b] +
+                         coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
+                         model.f(t,xij,a))
             end
             g!(x, out) = ForwardDiff.gradient!(out, objective, x)
             diffobj = DifferentiableFunction(objective, g!)
@@ -491,15 +501,15 @@ let
             bval      = model.b(t,xij,a)
             sval2     = model.σ(t,xij,a).^2
 
-            coeff1b   = -(2*sval2[1]*htaux2[1] + bval[1]*taux[1])
-            coeff1bb  = sval2[1]*htaux2[1]
-            coeff2f   = sval2[2]*htaux2[2] + max(bval[2],0.)*taux[2]
-            coeff2b   = sval2[2]*htaux2[2] - min(bval[2],0.)*taux[2]
-            coeff0    = -(coeff1f+coeff1b + coeff2b+coeff2bb)
+            coeff1b   = -(2*sval2[1]*hdx2[1] + bval[1]*invdx[1])
+            coeff1bb  = sval2[1]*hdx2[1]
+            coeff2f   = sval2[2]*hdx2[2] + max(bval[2],0.)*invdx[2]
+            coeff2b   = sval2[2]*hdx2[2] - min(bval[2],0.)*invdx[2]
+            coeff0    = -(coeff1b+coeff1bb + coeff2f+coeff2b)
 
-            return (coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
-                    coeff2f*v[idxj2f] + coeff2b*v[idxj2b] +
-                    model.f(t,xij,a))
+            return -(coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
+                     coeff2f*v[idxj2f] + coeff2b*v[idxj2b] +
+                     model.f(t,xij,a))
         end
 
         g!(x, out) = ForwardDiff.gradient!(out, objective, x)
@@ -522,14 +532,14 @@ let
         bval      = model.b(t,xij,a)
         sval2     = model.σ(t,xij,a).^2
 
-        coeff1b   = -(2*sval2[1]*htaux2[1] + bval[1]*taux[1])
-        coeff1bb  = sval2[1]*htaux2[1]
-        coeff2b   = -(2*sval2[2]*htaux2[2] + bval[2]*taux[2])
-        coeff2bb  = sval2[2]*htaux2[2]
-        coeff0    = -(coeff1f+coeff1b + coeff2b+coeff2bb)
-        return (coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
-                coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
-                model.f(t,xij,a))
+        coeff1b   = -(2*sval2[1]*hdx2[1] + bval[1]*invdx[1])
+        coeff1bb  = sval2[1]*hdx2[1]
+        coeff2b   = -(2*sval2[2]*hdx2[2] + bval[2]*invdx[2])
+        coeff2bb  = sval2[2]*hdx2[2]
+        coeff0    = -(coeff1b+coeff1bb + coeff2b+coeff2bb)
+        return -(coeff0*v[idxi] + coeff1b*v[idxj1b] + coeff1bb*v[idxj1bb] +
+                 coeff2b*v[idxj2b] + coeff2bb*v[idxj2bb] +
+                 model.f(t,xij,a))
     end
 
     g!(x, out) = ForwardDiff.gradient!(out, objective, x)
@@ -542,14 +552,15 @@ end
 end
 
 function policynewtonupdate_boundary{T<:Real}(model::HJBTwoDim{T},
-                                              v, a1, a2, x::Tuple{Vector{T},Vector{T}},
-                                              Δx::Vector{T}, Δt, ti::Int;
-                                              tol = 1e-3,
-                                              scale = 1.0,
-                                              maxpolicyiter::Int = 10)
+                                     v, a1, a2, x::Tuple{Vector{T},Vector{T}},
+                                     Δx::Vector{T}, Δt, ti::Int;
+                                     tol = 1e-3,
+                                     scale = 1.0,
+                                     maxpolicyiter::Int = 10)
     # v  = value function at previous time-step
     # an = policy function at previous time-step / initial guess for update
     t = (ti-1)*Δt
+    @show t
     n = length(v)
     K = [length(xi) for xi in x]
     @assert length(a1) == n && length(a2) == n
@@ -595,7 +606,7 @@ function policynewtonupdate_boundary{T<:Real}(model::HJBTwoDim{T},
 end
 
 function timeloopiteration_boundary(model::HJBTwoDim, K::Vector{Int}, N::Int,
-                                    Δt, vinit, x::Tuple, Δx::Vector)
+                           Δt, vinit, x::Tuple, Δx::Vector)
     # TODO: Pass v and pol by reference?
     v = zeros(length(vinit), N+1)
     # No policy at t = T
@@ -608,14 +619,14 @@ function timeloopiteration_boundary(model::HJBTwoDim, K::Vector{Int}, N::Int,
     # initial guess for control
     pol1init = fill(0.5*(model.amax[1]+model.amin[1]), prod(K))
     pol2init = fill(0.5*(model.amax[2]+model.amin[2]), prod(K))
-    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policynewtonupdate(model, v[:,N+1], pol1init, pol2init,
+    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policynewtonupdate_boundary(model, v[:,N+1], pol1init, pol2init,
                                                                 x, Δx, Δt, N)
 
     for j = N-1:-1:1
         # t = (j-1)*Δt
         # TODO: pass v-column, pol-columns by reference?
         @inbounds (v[:,j], pol1[:,j],
-                   pol2[:,j]) = policynewtonupdate(model, v[:,j+1], pol1[:,j+1], pol2[:,j+1],
+                   pol2[:,j]) = policynewtonupdate_boundary(model, v[:,j+1], pol1[:,j+1], pol2[:,j+1],
                                                    x, Δx, Δt, j)
     end
 
@@ -640,7 +651,7 @@ function solve_boundary{T1<:Real}(model::HJBTwoDim{T1}, K::Vector{Int}, N::Int)
         end
     end
 
-    v, pol = timeloopiteration(model, K, N, Δt, vinit, x, Δx)
+    v, pol = timeloopiteration_boundary(model, K, N, Δt, vinit, x, Δx)
     return v, pol
 end
 
