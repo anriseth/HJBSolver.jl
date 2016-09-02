@@ -49,22 +49,22 @@ function calculateerror(prob::TestProblem2D, K::Vector{Int}, v,pol)
 end
 
 facts("2D, Policy iteration") do
-    K = [51, 51]; N = 20
-    Δt = 2e-2
+    K = [26, 26]; N = 10
+    Δt = 5e-2
     prob = createmodel(T=Δt*N)
     model = prob.model
 
     @time v, pol = solve(model, K, N)
     errv, erra1, erra2 = calculateerror(prob, K, v, pol)
 
-    @fact errv --> roughly(0., 1e-3)
+    @fact errv --> roughly(0., 5e-3)
     @fact erra1 --> roughly(0., 5e-2)
     @fact erra2 --> roughly(0., 5e-2)
 end
 
 facts("2D, Policy timestepping") do
-    K = [51, 51]; N = 10; M = (20,20)
-    Δt = 2e-2
+    K = [26, 26]; N = 10; M = (20,20)
+    Δt = 5e-2
     prob = createmodel(T=Δt*N)
     model = prob.model
 
@@ -74,7 +74,7 @@ facts("2D, Policy timestepping") do
     @time v, pol = solve(model, K, N, (avals1,avals2))
 
     errv, erra1, erra2 = calculateerror(prob, K, v, pol)
-    @fact errv --> roughly(0., 1e-3)
+    @fact errv --> roughly(0., 1e-2)
     @fact erra1 --> roughly(0., 0.25)
     @fact erra2 --> roughly(0., 0.25)
 end
