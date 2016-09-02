@@ -12,26 +12,14 @@ function setIJV!{T<:Real}(I::Vector{Int},J::Vector{Int},V::Vector{T},
     return counter
 end
 
-function updatesystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
-                                a1::Vector{T}, a2::Vector{T}, Δt::T, Δx::Vector{T})
-    # Updates:
-    # rhs    = value function at previous timestep + f at current timestep
-    # I,J,V  = vectors for creating sparse system matrix (see ?sparse)
 
-    # Input
-    # model  = HJBTwoDim object
-    # v      = value function at previous timestep
-    # t      = value of (forward) time
-    # x      = tuple of vectors of x-values
-    # a1     = policy-values on interior, element 1
-    # a2     = policy-values on interior, element 2
-    # Δt     = time-step size
-    # Δx     = spacial step length
+function updateboundarysystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
+                                        a1::Vector{T}, a2::Vector{T},
+                                        Δt::T, Δx::Vector{T})
     taux = Δt ./Δx
     htaux2 = 0.5*Δt ./ Δx.^2
     K = [length(xi) for xi in x]
 
-    #TODO: add @inbounds
     counter = 0
     # Dirichlet conditions for x_1 = {xmin, xmax}
     for i = [1, K[1]], j = 1:K[2]
@@ -54,7 +42,32 @@ function updatesystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
         rhs[idxi] = model.Dbound(t, xij)
     end
 
-    # Interior coefficients
+    @assert counter == length(V)
+end
+
+function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
+                                        a1::Vector{T}, a2::Vector{T},
+                                        Δt::T, Δx::Vector{T})
+    # Updates:
+    # rhs    = value function at previous timestep + f at current timestep
+    # I,J,V  = vectors for creating sparse system matrix (see ?sparse)
+
+    # Input
+    # model  = HJBTwoDim object
+    # v      = value function at previous timestep
+    # t      = value of (forward) time
+    # x      = tuple of vectors of x-values
+    # a1     = policy-values on interior, element 1
+    # a2     = policy-values on interior, element 2
+    # Δt     = time-step size
+    # Δx     = spacial step length
+
+    taux = Δt ./Δx
+    htaux2 = 0.5*Δt ./ Δx.^2
+    K = [length(xi) for xi in x]
+
+    counter = 0
+
     for i = 2:K[1]-1, j = 2:K[2]-1
         @inbounds begin
             idxi = K[2]*(i-1) + j
@@ -84,8 +97,9 @@ function updatesystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     @assert counter == length(V)
 end
 
-function updatepol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
-                    tol=1e-3)
+
+function updateinteriorpol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
+                            tol=1e-3)
     # Loops over each x value and optimises the control
     # TODO: Should we instead optimize the whole control vector
     # by considering the sum of the individual objectives
@@ -120,7 +134,6 @@ function updatepol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
         end
     end
 
-    # Only find control values at interior
     for i = 2:K[1]-1, j = 2:K[2]-1
         @inbounds begin
             idxi = K[2]*(i-1) + j
@@ -152,8 +165,10 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
     # Elements in sparse system matrix (n\times n) size
     interiornnz = 5*prod(K-2)
     boundarynnz = 2*(sum(K)-2)
-    totnnz = interiornnz + boundarynnz
-    I = zeros(Int, totnnz); J = zeros(I); V = zeros(T, totnnz)
+    #totnnz = interiornnz + boundarynnz
+    #I = zeros(Int, totnnz); J = zeros(I); V = zeros(T, totnnz)
+    Ii = zeros(Int, interiornnz); Ji = zeros(Ii); Vi = zeros(T, interiornnz)
+    Ib = zeros(Int, boundarynnz); Jb = zeros(Ib); Vb = zeros(T, boundarynnz)
 
     rhs = zeros(v)
 
@@ -163,10 +178,11 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
     vnew = copy(v)
 
     for k in 0:maxpolicyiter
-        updatepol!(pol1, pol2, vnew, model, t, x, Δx)
-        updatesystem!(I,J,V, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
+        updateinteriorpol!(pol1, pol2, vnew, model, t, x, Δx)
+        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
+        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
 
-        Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
+        Mat = sparse([Ib;Ii],[Jb;Ji],[Vb;Vi],n,n,(x,y)->error("Each index should be unique"))
 
         # TODO: Use Krylov solver for high-dimensional PDEs?
         vold = vnew
@@ -178,7 +194,7 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
         end
     end
     # TODO: do we need this one?
-    updatepol!(pol1, pol2, vnew, model, t, x, Δx)
+    updateinteriorpol!(pol1, pol2, vnew, model, t, x, Δx)
 
     return vnew, pol1, pol2
 end
@@ -196,8 +212,10 @@ function policytimestep{T<:Real}(model::HJBTwoDim{T},
     # Elements in sparse system matrix (n\times n) size
     interiornnz = 5*prod(K-2)
     boundarynnz = 2*(sum(K)-2)
-    totnnz = interiornnz + boundarynnz
-    I = zeros(Int, totnnz); J = zeros(I); V = zeros(T, totnnz)
+    #totnnz = interiornnz + boundarynnz
+    #I = zeros(Int, totnnz); J = zeros(I); V = zeros(T, totnnz)
+    Ii = zeros(Int, interiornnz); Ji = zeros(Ii); Vi = zeros(T, interiornnz)
+    Ib = zeros(Int, boundarynnz); Jb = zeros(Ib); Vb = zeros(T, boundarynnz)
 
     a1const = zeros(n)
     a2const = zeros(n)
@@ -212,10 +230,10 @@ function policytimestep{T<:Real}(model::HJBTwoDim{T},
         a1const[:] = avals[1][i]
         a2const[:] = avals[2][j]
 
-        updatesystem!(I,J,V, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
+        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
+        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
 
-        # TODO: Remove the Base.error thing, just for checking
-        Mat = sparse(I,J,V,n,n,(x,y)->Base.error("Overlap"))
+        Mat = sparse([Ib;Ii],[Jb;Ji],[Vb;Vi],n,n,(x,y)->error("Each index should be unique"))
 
         # TODO: Use Krylov solver for high-dimensional PDEs?
         vold = vnew
