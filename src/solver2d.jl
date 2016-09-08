@@ -2,6 +2,30 @@ export solve
 
 # TODO: better names for the functions
 
+function hamiltonianinterior(a, model::HJBTwoDim, v, t, x, xidx, Δx)
+    i,j = xidx
+    K = [length(xi) for xi in x]
+    invdx = 1.0 ./ Δx
+    hdx2 = 0.5 ./ Δx.^2
+
+    @inbounds begin
+        idxi = K[2]*(i-1) + j
+        idxj1f = idxi + K[2]; idxj1b = idxi - K[2]
+        idxj2f = idxi + 1;    idxj2b = idxi - 1
+
+        xij = [x[1][i], x[2][j]]
+        bval = model.b(t,xij,a)
+        sval2 = model.σ(t,xij,a).^2
+        coeff1f = sval2[1]*hdx2[1] + max(bval[1],0.)*invdx[1]
+        coeff1b = sval2[1]*hdx2[1] - min(bval[1],0.)*invdx[1]
+        coeff2f = sval2[2]*hdx2[2] + max(bval[2],0.)*invdx[2]
+        coeff2b = sval2[2]*hdx2[2] - min(bval[2],0.)*invdx[2]
+        return (coeff1f*(v[idxi]-v[idxj1f]) + coeff1b*(v[idxi]-v[idxj1b]) +
+                coeff2f*(v[idxi]-v[idxj2f]) + coeff2b*(v[idxi]-v[idxj2b]) -
+                model.f(t,xij,a))
+    end
+end
+
 function setIJV!{T<:Real}(I::Vector{Int},J::Vector{Int},V::Vector{T},
                           Ival::Int,Jval::Int,Vval::T,counter::Int)
     counter = counter+1
@@ -11,7 +35,6 @@ function setIJV!{T<:Real}(I::Vector{Int},J::Vector{Int},V::Vector{T},
 
     return counter
 end
-
 
 function updateboundarysystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
                                         a1::Vector{T}, a2::Vector{T},
@@ -97,9 +120,8 @@ function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     @assert counter == length(V)
 end
 
-
 function updateinteriorpol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
-                            tol=1e-3)
+                            tol=1e-4, verbose=false)
     # Loops over each x value and optimises the control
     # TODO: Should we instead optimize the whole control vector
     # by considering the sum of the individual objectives
@@ -107,44 +129,22 @@ function updateinteriorpol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::V
     @assert size(pol1) == size(pol2)
 
     K = [length(xi) for xi in x]
-    invdx = 1.0 ./ Δx
-    hdx2 = 0.5 ./ Δx.^2
-
-    function hamiltonian(a, i::Int, j::Int)
-        # Evaluate Hamiltonian with value a at (t,x_{i,j}), indices starting at 1
-        # coeffn = values in linear system
-        # e.g. coeff0  is the coefficient in front of v at x_{i,j}
-        #      coeff1f is the coefficient in front of v at x_{i+1,j}
-        #      coeff2b is the coefficient in front of v at x_{i,j-1}
-        @inbounds begin
-            idxi = K[2]*(i-1) + j
-            idxj1f = idxi + K[2]; idxj1b = idxi - K[2]
-            idxj2f = idxi + 1;    idxj2b = idxi - 1
-
-            xij = [x[1][i], x[2][j]]
-            bval = model.b(t,xij,a)
-            sval2 = model.σ(t,xij,a).^2
-            coeff1f = sval2[1]*hdx2[1] + max(bval[1],0.)*invdx[1]
-            coeff1b = sval2[1]*hdx2[1] - min(bval[1],0.)*invdx[1]
-            coeff2f = sval2[2]*hdx2[2] + max(bval[2],0.)*invdx[2]
-            coeff2b = sval2[2]*hdx2[2] - min(bval[2],0.)*invdx[2]
-            return (coeff1f*(v[idxi]-v[idxj1f]) + coeff1b*(v[idxi]-v[idxj1b]) +
-                    coeff2f*(v[idxi]-v[idxj2f]) + coeff2b*(v[idxi]-v[idxj2b]) -
-                    model.f(t,xij,a))
-        end
-    end
-
     for i = 2:K[1]-1, j = 2:K[2]-1
         @inbounds begin
             idxi = K[2]*(i-1) + j
-            objective(a) = hamiltonian(a, i, j)
+            objective(a) = hamiltonianinterior(a, model, v, t, x, [i, j], Δx)
             g!(x, out) = ForwardDiff.gradient!(out, objective, x)
             diffobj = DifferentiableFunction(objective, g!)
             res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
                            model.amin, model.amax, Fminbox(),
-                           optimizer = LBFGS)
-            # TODO: add optimizer options?
-            pol1[idxi], pol2[idxi] = res.minimum
+                           optimizer = LBFGS,
+                           show_trace=verbose, extended_trace=verbose,
+                           f_tol=tol,x_tol=tol,g_tol=tol,
+                           iterations=100,
+                           optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,g_tol=tol,
+                                                             iterations=100,
+                                                             show_trace=verbose,extended_trace=verbose))
+            @inbounds pol1[idxi], pol2[idxi] = res.minimum
         end
     end
 end
@@ -152,7 +152,7 @@ end
 function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
                                      v, a1, a2, x::Tuple{Vector{T},Vector{T}},
                                      Δx::Vector{T}, Δt, ti::Int;
-                                     tol = 1e-3,
+                                     tol = 1e-4,
                                      scale = 1.0,
                                      maxpolicyiter::Int = 10)
     # v  = value function at previous time-step
@@ -189,7 +189,7 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
         vnew = Mat\rhs
 
         vchange = maximum(abs(vnew-vold)./max(1.,abs(vnew)))
-        if vchange < Δt*tol && k>0
+        if vchange < tol && k>0
             break
         end
     end
