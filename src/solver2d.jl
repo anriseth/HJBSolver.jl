@@ -120,31 +120,44 @@ function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     @assert counter == length(V)
 end
 
-function updateinteriorpol!(pol1, pol2, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
-                            tol=1e-4, verbose=false)
+function optimizepol!(pol::Tuple, objective::Function, v, model::HJBTwoDim, t,
+                      x, Δx, idxi::Int;
+                      tol = 1e-4, maxiter = 1000, optimizer = LBFGS,
+                      verbose=false)
+    initialguess = [p[idxi] for p in pol]
+    g!(a, out) = ForwardDiff.gradient!(out, objective, a)
+    diffobj = DifferentiableFunction(objective, g!)
+    res = optimize(diffobj, initialguess,
+                   model.amin, model.amax, Fminbox(),
+                   optimizer = optimizer,
+                   show_trace=verbose, extended_trace=verbose,
+                   f_tol=tol,x_tol=tol,g_tol=tol,
+                   iterations=100,
+                   optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,
+                                                     g_tol=tol, iterations=100,
+                                                     show_trace=verbose,
+                                                     extended_trace=verbose))
+    for (i,val) in enumerate(res.minimum)
+        pol[i][idxi] = val
+    end
+end
+
+function updateinteriorpol!(pol::Tuple, v, model::HJBTwoDim, t, x::Tuple, Δx::Vector;
+                            tol = 1e-4, maxiter = 1000,
+                            optimizer = LBFGS, verbose=false)
     # Loops over each x value and optimises the control
     # TODO: Should we instead optimize the whole control vector
     # by considering the sum of the individual objectives
     # (the gradient should be diagonal?)
-    @assert size(pol1) == size(pol2)
 
     K = [length(xi) for xi in x]
     for i = 2:K[1]-1, j = 2:K[2]-1
         @inbounds begin
-            idxi = K[2]*(i-1) + j
             objective(a) = hamiltonianinterior(a, model, v, t, x, [i, j], Δx)
-            g!(x, out) = ForwardDiff.gradient!(out, objective, x)
-            diffobj = DifferentiableFunction(objective, g!)
-            res = optimize(diffobj, [pol1[idxi], pol2[idxi]],
-                           model.amin, model.amax, Fminbox(),
-                           optimizer = LBFGS,
-                           show_trace=verbose, extended_trace=verbose,
-                           f_tol=tol,x_tol=tol,g_tol=tol,
-                           iterations=100,
-                           optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,g_tol=tol,
-                                                             iterations=100,
-                                                             show_trace=verbose,extended_trace=verbose))
-            @inbounds pol1[idxi], pol2[idxi] = res.minimum
+            idxi = K[2]*(i-1) + j
+            optimizepol!(pol, objective, v, model, t, x, Δx, idxi;
+                         tol=tol, verbose=verbose,
+                         optimizer=optimizer, maxiter=maxiter)
         end
     end
 end
@@ -175,10 +188,11 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
     # TODO: copy or pass reference?
     pol1 = copy(a1)
     pol2 = copy(a2)
+
     vnew = copy(v)
 
     for k in 0:maxpolicyiter
-        updateinteriorpol!(pol1, pol2, vnew, model, t, x, Δx)
+        updateinteriorpol!((pol1, pol2), vnew, model, t, x, Δx)
         updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
         updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
 
@@ -194,7 +208,7 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
         end
     end
     # TODO: do we need this one?
-    updateinteriorpol!(pol1, pol2, vnew, model, t, x, Δx)
+    updateinteriorpol!((pol1, pol2), vnew, model, t, x, Δx)
 
     return vnew, pol1, pol2
 end
