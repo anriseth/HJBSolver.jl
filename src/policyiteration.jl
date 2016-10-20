@@ -53,7 +53,7 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
             end
         end
         res = optimize(objective, model.amin, model.amax)
-        @inbounds pol[1] = res.minimum
+        @inbounds pol[1] = Optim.minimizer(res)
     end
 
     let
@@ -69,7 +69,7 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
             end
         end
         res = optimize(objective, model.amin, model.amax)
-        @inbounds pol[end] = res.minimum
+        @inbounds pol[end] = Optim.minimizer(res)
     end
 
     function hamiltonian(a, j::Int)
@@ -90,10 +90,10 @@ function updatepol!(pol, v, model::HJBOneDim, t, x, Δx)
         # res = optimize(diffobj, [pol[j]], [model.amin], [model.amax],
         #                Fminbox(), optimizer=LBFGS,
         #                optimizer_o = OptimizationOptions(g_tol=1e-3,f_tol=1e-3,x_tol=1e-3))#,
-        #@inbounds pol[j] = res.minimum[1]
+        #@inbounds pol[j] = Optim.minimizer(res)[1]
         # TODO: Give the choice of Brent vs Fminbox()?
         res = optimize(objective, model.amin, model.amax)
-        @inbounds pol[j] = res.minimum
+        @inbounds pol[j] = Optim.minimizer(res)
     end
 end
 
