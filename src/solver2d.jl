@@ -37,7 +37,7 @@ function setIJV!{T<:Real}(I::Vector{Int},J::Vector{Int},V::Vector{T},
 end
 
 function updateboundarysystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
-                                        a1::Vector{T}, a2::Vector{T},
+                                        a::Tuple,
                                         Δt::T, Δx::Vector{T})
     taux = Δt ./Δx
     htaux2 = 0.5*Δt ./ Δx.^2
@@ -69,7 +69,7 @@ function updateboundarysystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
 end
 
 function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
-                                        a1::Vector{T}, a2::Vector{T},
+                                        a::Tuple,
                                         Δt::T, Δx::Vector{T})
     # Updates:
     # rhs    = value function at previous timestep + f at current timestep
@@ -80,8 +80,7 @@ function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
     # v      = value function at previous timestep
     # t      = value of (forward) time
     # x      = tuple of vectors of x-values
-    # a1     = policy-values on interior, element 1
-    # a2     = policy-values on interior, element 2
+    # a      = policy-values on interior
     # Δt     = time-step size
     # Δx     = spacial step length
 
@@ -97,7 +96,7 @@ function updateinteriorsystem!{T<:Real}(I, J, V, rhs, model, v, t::T, x,
             idxj1f = idxi + K[2]; idxj1b = idxi - K[2]
             idxj2f = idxi + 1;    idxj2b = idxi - 1
             xij = [x[1][i], x[2][j]]
-            aij = [a1[idxi], a2[idxi]]
+            aij = [ai[idxi] for ai in a]
 
             bval = model.b(t,xij,aij)
             sval2 = model.σ(t,xij,aij).^2
@@ -125,18 +124,24 @@ function optimizepol!(pol::Tuple, objective::Function, v, model::HJBTwoDim, t,
                       tol = 1e-4, maxiter = 1000, optimizer = LBFGS,
                       verbose=false)
     initialguess = [p[idxi] for p in pol]
-    g!(a, out) = ForwardDiff.gradient!(out, objective, a)
-    diffobj = DifferentiableFunction(objective, g!)
-    res = optimize(diffobj, initialguess,
-                   model.amin, model.amax, Fminbox(),
-                   optimizer = optimizer,
-                   show_trace=verbose, extended_trace=verbose,
-                   f_tol=tol,x_tol=tol,g_tol=tol,
-                   iterations=100,
-                   optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,
-                                                     g_tol=tol, iterations=100,
-                                                     show_trace=verbose,
-                                                     extended_trace=verbose))
+    # g!(a, out) = ForwardDiff.gradient!(out, objective, a)
+    # diffobj = DifferentiableFunction(objective, g!)
+    # res = optimize(diffobj, initialguess,
+    #                model.amin, model.amax, Fminbox(),
+    #                optimizer = optimizer,
+    #                show_trace=verbose, extended_trace=verbose,
+    #                f_tol=tol,x_tol=tol,g_tol=tol,
+    #                iterations=100,
+    #                optimizer_o = OptimizationOptions(f_tol=tol,x_tol=tol,
+    #                                                  g_tol=tol, iterations=100,
+    #                                                  show_trace=verbose,
+    #                                                  extended_trace=verbose))
+    res = optimize(objective, initialguess,
+                   optimizer(),
+                   OptimizationOptions(f_tol=tol,x_tol=tol,
+                                       g_tol=tol,
+                                       show_trace=verbose,
+                                       extended_trace=verbose))
     for (i,val) in enumerate(Optim.minimizer(res))
         pol[i][idxi] = val
     end
@@ -163,7 +168,7 @@ function updateinteriorpol!(pol::Tuple, v, model::HJBTwoDim, t, x::Tuple, Δx::V
 end
 
 function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
-                                     v, a1, a2, x::Tuple{Vector{T},Vector{T}},
+                                     v, a::Tuple, x::Tuple{Vector{T},Vector{T}},
                                      Δx::Vector{T}, Δt, ti::Int;
                                      tol = 1e-4,
                                      scale = 1.0,
@@ -186,15 +191,13 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
     rhs = zeros(v)
 
     # TODO: copy or pass reference?
-    pol1 = copy(a1)
-    pol2 = copy(a2)
-
+    pol = (copy(a[1]), copy(a[2])) # how can we make a generator out of this?
     vnew = copy(v)
 
     for k in 0:maxpolicyiter
-        updateinteriorpol!((pol1, pol2), vnew, model, t, x, Δx)
-        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
-        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, pol1, pol2, Δt, Δx)
+        updateinteriorpol!(pol, vnew, model, t, x, Δx)
+        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, pol, Δt, Δx)
+        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, pol, Δt, Δx)
 
         Mat = sparse([Ib;Ii],[Jb;Ji],[Vb;Vi],n,n,(x,y)->error("Each index should be unique"))
 
@@ -207,10 +210,8 @@ function policynewtonupdate{T<:Real}(model::HJBTwoDim{T},
             break
         end
     end
-    # TODO: do we need this one?
-    updateinteriorpol!((pol1, pol2), vnew, model, t, x, Δx)
 
-    return vnew, pol1, pol2
+    return vnew, pol...
 end
 
 function policytimestep{T<:Real}(model::HJBTwoDim{T},
@@ -244,8 +245,8 @@ function policytimestep{T<:Real}(model::HJBTwoDim{T},
         a1const[:] = avals[1][i]
         a2const[:] = avals[2][j]
 
-        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
-        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, a1const, a2const, Δt, Δx)
+        updateboundarysystem!(Ib,Jb,Vb, rhs, model, v, t, x, (a1const, a2const), Δt, Δx)
+        updateinteriorsystem!(Ii,Ji,Vi, rhs, model, v, t, x, (a1const, a2const), Δt, Δx)
 
         Mat = sparse([Ib;Ii],[Jb;Ji],[Vb;Vi],n,n,(x,y)->error("Each index should be unique"))
 
@@ -279,14 +280,14 @@ function timeloopiteration(model::HJBTwoDim, K::Vector{Int}, N::Int,
     # initial guess for control
     pol1init = fill(0.5*(model.amax[1]+model.amin[1]), prod(K))
     pol2init = fill(0.5*(model.amax[2]+model.amin[2]), prod(K))
-    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policynewtonupdate(model, v[:,N+1], pol1init, pol2init,
+    @inbounds v[:,N], pol1[:,N], pol2[:,N] = policynewtonupdate(model, v[:,N+1], (pol1init, pol2init),
                                                                 x, Δx, Δt, N)
 
     for j = N-1:-1:1
         # t = (j-1)*Δt
         # TODO: pass v-column, pol-column by reference?
         @inbounds (v[:,j], pol1[:,j],
-                   pol2[:,j]) = policynewtonupdate(model, v[:,j+1], pol1[:,j+1], pol2[:,j+1],
+                   pol2[:,j]) = policynewtonupdate(model, v[:,j+1], (pol1[:,j+1], pol2[:,j+1]),
                                                    x, Δx, Δt, j)
     end
 
