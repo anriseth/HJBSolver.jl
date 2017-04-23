@@ -136,12 +136,14 @@ function optimizepol!(pol::Tuple, objective::Function, v, model::HJBTwoDim, t,
     #                                                  g_tol=tol, iterations=100,
     #                                                  show_trace=verbose,
     #                                                  extended_trace=verbose))
+
+    # TODO: use autodiff?
     res = optimize(objective, initialguess,
                    optimizer(),
-                   OptimizationOptions(f_tol=tol,x_tol=tol,
-                                       g_tol=tol,
-                                       show_trace=verbose,
-                                       extended_trace=verbose))
+                   Optim.Options(f_tol=tol,x_tol=tol,
+                                 g_tol=tol,
+                                 show_trace=verbose,
+                                 extended_trace=verbose))
     for (i,val) in enumerate(Optim.minimizer(res))
         pol[i][idxi] = val
     end
